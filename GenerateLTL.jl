@@ -3,10 +3,14 @@
 # propositions and a selectable set of temporal operators.                                     #
 ################################################################################################
 
+#module GenerateLTL
+
+
 using Random
 
 # ----------------------------------------------------------------------------------------------
-# LTL AST
+# LTL AST (Abstract Syntax Tree) definition.
+# AST is a tree representation of a formula, where each node is either an atomic proposition, a unary operator with one child, or a binary operator with two children.
 # ----------------------------------------------------------------------------------------------
 
 abstract type LTLFormula end
@@ -39,7 +43,11 @@ Base.@kwdef struct LTLGeneratorConfig
     allow_boolean_constants::Bool = false
     boolean_constants::Vector{String} = ["true", "false"]
     boolean_unary_ops::Vector{Symbol} = [:!]
-    boolean_binary_ops::Vector{Symbol} = [:&, :|, :->]
+    boolean_binary_ops::Vector{Symbol} = [:&, :|, :->, Symbol("<->")]
+    max_ast_size::Union{Nothing, Int} = nothing
+    max_attempts_per_formula::Int = 100
+    enforce_unique_formulas::Bool = true
+    uniqueness_mode::Symbol = :normalized
 end
 
 # ----------------------------------------------------------------------------------------------
@@ -49,7 +57,7 @@ end
 is_temporal_unary(op::Symbol) = op in (:X, :F, :G)
 is_temporal_binary(op::Symbol) = op in (:U, :R, :W)
 is_boolean_unary(op::Symbol) = op == :!
-is_boolean_binary(op::Symbol) = op in (:&, :|, :->)
+is_boolean_binary(op::Symbol) = op in (:&, :|, :->, Symbol("<->"))
 is_unary(op::Symbol) = is_temporal_unary(op) || is_boolean_unary(op)
 is_binary(op::Symbol) = is_temporal_binary(op) || is_boolean_binary(op)
 
@@ -76,6 +84,9 @@ end
 
 """
     random_atom(atomic_props, cfg, rng)
+    - atomic_props: Vector of atomic propositions
+    - cfg: LTLGeneratorConfig instance to determine if Boolean constants are allowed and what they are.
+    - rng: AbstractRNG instance for random number generation.
 
 Return a random atomic proposition, or a Boolean constant if enabled.
 """
@@ -89,15 +100,6 @@ function random_atom(atomic_props::Vector{String}, cfg::LTLGeneratorConfig, rng:
     return AP(rand(rng, choices))
 end
 
-"""
-    random_ltl_formula(atomic_props, temporal_ops; cfg=LTLGeneratorConfig(), rng=Random.default_rng())
-
-Generate a random syntactically valid LTL formula from:
-- `atomic_props`: e.g. ["prop_1", "prop_2", "prop_3"]
-- `temporal_ops`: subset of [:X, :F, :G, :U, :R, :W]
-
-Boolean operators are always available through the generator config.
-"""
 function random_ltl_formula(
     atomic_props::Vector{String},
     temporal_ops::Vector{Symbol};
@@ -113,7 +115,16 @@ function random_ltl_formula(
         throw(ArgumentError("`atomic_props` cannot be empty unless `allow_boolean_constants=true`."))
     end
 
-    return _random_ltl_formula(atomic_props, available_unary_ops, available_binary_ops, cfg, 0, rng)
+    for _ in 1:cfg.max_attempts_per_formula
+        formula = _random_ltl_formula(atomic_props, available_unary_ops, available_binary_ops, cfg, 0, rng)
+        if isnothing(cfg.max_ast_size) || ast_size(formula) <= cfg.max_ast_size
+            return formula
+        end
+    end
+
+    throw(ArgumentError(
+        "Could not generate a formula satisfying `max_ast_size=$(cfg.max_ast_size)` within $(cfg.max_attempts_per_formula) attempts. Try increasing `max_ast_size`, reducing `max_depth`, or increasing `max_attempts_per_formula`."
+    ))
 end
 
 function _random_ltl_formula(
@@ -248,6 +259,44 @@ function _collect_operator_counts!(counts::Dict{Symbol, Int}, formula::BinaryLTL
     return counts
 end
 
+
+# ----------------------------------------------------------------------------------------------
+# Helper functions for formula normalization and uniqueness
+# ----------------------------------------------------------------------------------------------
+
+function _normalize_formula(formula::AP, mapping::Dict{String,String}, counter::Base.RefValue{Int})
+    if formula.name in ("true", "false")
+        return AP(formula.name)
+    end
+    if !haskey(mapping, formula.name)
+        mapping[formula.name] = "prop_$(counter[])"
+        counter[] += 1
+    end
+    return AP(mapping[formula.name])
+end
+
+function _normalize_formula(formula::UnaryLTL, mapping::Dict{String,String}, counter::Base.RefValue{Int})
+    return UnaryLTL(formula.op, _normalize_formula(formula.child, mapping, counter))
+end
+
+function _normalize_formula(formula::BinaryLTL, mapping::Dict{String,String}, counter::Base.RefValue{Int})
+    return BinaryLTL(
+        formula.op,
+        _normalize_formula(formula.left, mapping, counter),
+        _normalize_formula(formula.right, mapping, counter),
+    )
+end
+
+function normalize_formula(formula::LTLFormula)
+    mapping = Dict{String,String}()
+    counter = Ref(1)
+    return _normalize_formula(formula, mapping, counter)
+end
+
+function normalized_formula_string(formula::LTLFormula)
+    return formula_to_string(normalize_formula(formula))
+end
+
 # ----------------------------------------------------------------------------------------------
 # Batch generation
 # ----------------------------------------------------------------------------------------------
@@ -256,6 +305,7 @@ end
     synthesize_formulas(n, atomic_props, temporal_ops; cfg=LTLGeneratorConfig(), rng=Random.default_rng())
 
 Generate `n` random LTL formulas and return them as AST objects.
+Use `cfg.max_depth` to limit nesting depth and `cfg.max_ast_size` to optionally reject formulas whose AST size is too large.
 """
 function synthesize_formulas(
     n::Int,
@@ -265,7 +315,103 @@ function synthesize_formulas(
     rng::AbstractRNG = Random.default_rng(),
 )
     n < 1 && throw(ArgumentError("`n` must be at least 1."))
-    return [random_ltl_formula(atomic_props, temporal_ops; cfg=cfg, rng=rng) for _ in 1:n]
+
+    if !(cfg.uniqueness_mode in (:exact, :normalized))
+        throw(ArgumentError("`cfg.uniqueness_mode` must be either :exact or :normalized."))
+    end
+
+    formulas = LTLFormula[]
+    seen = Set{String}()
+    total_attempts = 0
+    max_total_attempts = max(n * cfg.max_attempts_per_formula, cfg.max_attempts_per_formula)
+
+    while length(formulas) < n
+        total_attempts += 1
+        if total_attempts > max_total_attempts
+            throw(ArgumentError(
+                "Could not generate $(n) formulas under the current uniqueness constraints within $(max_total_attempts) attempts. Try relaxing uniqueness, increasing `max_depth`, increasing `max_ast_size`, or increasing `max_attempts_per_formula`."
+            ))
+        end
+
+        formula = random_ltl_formula(atomic_props, temporal_ops; cfg=cfg, rng=rng)
+
+        if cfg.enforce_unique_formulas
+            key = cfg.uniqueness_mode == :exact ? formula_to_string(formula) : normalized_formula_string(formula)
+            if key in seen
+                continue
+            end
+            push!(seen, key)
+        end
+
+        push!(formulas, formula)
+    end
+
+    return formulas
+end
+
+"""
+    build_generator_config(; kwargs...)
+
+Convenience helper for constructing `LTLGeneratorConfig` from a main script.
+This is useful when `main.jl` wants to specify only a few parameters such as
+`max_depth` or `max_ast_size` while keeping the rest at their defaults.
+"""
+function build_generator_config(; kwargs...)
+    return LTLGeneratorConfig(; kwargs...)
+end
+
+"""
+    generate_ltl_formulas(; atomic_props, temporal_ops, n=1, max_depth=4, max_ast_size=nothing,
+                            p_atom_at_max_depth=1.0, p_atom_before_max_depth=0.25,
+                            unary_weight=0.35, binary_weight=0.40,
+                            allow_boolean_constants=false,
+                            boolean_constants=["true", "false"],
+                            boolean_unary_ops=[:!],
+                            boolean_binary_ops=[:&, :|, :->, Symbol("<->")],
+                            max_attempts_per_formula=100,
+                            enforce_unique_formulas=false,
+                            uniqueness_mode=:exact,
+                            rng=Random.default_rng())
+
+High-level API intended to be called from `main.jl`.
+Returns a vector of randomly generated LTL formulas as AST objects.
+"""
+function generate_ltl_formulas(; 
+    atomic_props::Vector{String},
+    temporal_ops::Vector{Symbol},
+    n::Int = 1,
+    max_depth::Int = 4,
+    max_ast_size::Union{Nothing, Int} = nothing,
+    p_atom_at_max_depth::Float64 = 1.0,
+    p_atom_before_max_depth::Float64 = 0.25,
+    unary_weight::Float64 = 0.35,
+    binary_weight::Float64 = 0.40,
+    allow_boolean_constants::Bool = false,
+    boolean_constants::Vector{String} = ["true", "false"],
+    boolean_unary_ops::Vector{Symbol} = [:!],
+    boolean_binary_ops::Vector{Symbol} = [:&, :|, :->, Symbol("<->")],
+    max_attempts_per_formula::Int = 100,
+    enforce_unique_formulas::Bool = true,
+    uniqueness_mode::Symbol = :normalized,
+    rng::AbstractRNG = Random.default_rng(),
+)
+    cfg = LTLGeneratorConfig(
+        max_depth = max_depth,
+        p_atom_at_max_depth = p_atom_at_max_depth,
+        p_atom_before_max_depth = p_atom_before_max_depth,
+        unary_weight = unary_weight,
+        binary_weight = binary_weight,
+        allow_boolean_constants = allow_boolean_constants,
+        boolean_constants = boolean_constants,
+        boolean_unary_ops = boolean_unary_ops,
+        boolean_binary_ops = boolean_binary_ops,
+        max_ast_size = max_ast_size,
+        max_attempts_per_formula = max_attempts_per_formula,
+        enforce_unique_formulas = enforce_unique_formulas,
+        uniqueness_mode = uniqueness_mode,
+    )
+
+    return synthesize_formulas(n, atomic_props, temporal_ops; cfg=cfg, rng=rng)
 end
 
 # ----------------------------------------------------------------------------------------------
@@ -276,38 +422,30 @@ if abspath(PROGRAM_FILE) == @__FILE__
     atomic_props = ["prop_1", "prop_2", "prop_3", "prop_4"]
     temporal_ops = [:X, :F, :G, :U]
 
-    cfg = LTLGeneratorConfig(
+    formulas = generate_ltl_formulas(
+        atomic_props = atomic_props,
+        temporal_ops = temporal_ops,
+        n = 5,
         max_depth = 4,
+        max_ast_size = 10,
         p_atom_before_max_depth = 0.20,
         unary_weight = 0.35,
         binary_weight = 0.45,
         allow_boolean_constants = false,
+        boolean_binary_ops = [:&, :|, :->, Symbol("<->")],
+        enforce_unique_formulas = true,
+        uniqueness_mode = :normalized,
     )
-
-    formulas = synthesize_formulas(5, atomic_props, temporal_ops; cfg=cfg)
 
     for (i, formula) in enumerate(formulas)
         println("Formula $(i): ", formula_to_string(formula))
+        println("  Normalized form: ", normalized_formula_string(formula))
         println("  AST size: ", ast_size(formula))
         println("  AST depth: ", ast_depth(formula))
         println("  Temporal depth: ", temporal_depth(formula))
         println("  Operator counts: ", operator_counts(formula))
         println()
     end
-end
+end 
 
-
-atomic_props = ["prop_1", "prop_2", "prop_3", "prop_4"]
-temporal_ops = [:X, :F, :G, :U]
-
-cfg = LTLGeneratorConfig(
-    max_depth = 4,
-    p_atom_before_max_depth = 0.20,
-    unary_weight = 0.35,
-    binary_weight = 0.45,
-)
-
-formulas = synthesize_formulas(10, atomic_props, temporal_ops; cfg=cfg)
-for f in formulas
-    println(formula_to_string(f))
-end
+# end # module
