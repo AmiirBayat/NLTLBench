@@ -1,0 +1,40 @@
+[
+  {
+    "id": 1,
+    "formula": "(G(prop_2) <-> prop_1)",
+    "simplified_formula": "(prop_1 <-> G(prop_2))",
+    "selected_formula": "(prop_1 <-> G(prop_2))",
+    "selected_representation": "simplified",
+    "satisfiability": "satisfiable",
+    "tautology": false,
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "operator_counts": {
+      "<->": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety_like",
+      "conditional"
+    ]
+  },
+  {
+    "id": 2,
+    "formula": "X(prop_2)",
+    "simplified_formula": "X(prop_2)",
+    "selected_formula": "X(prop_2)",
+    "selected_representation": "original",
+    "satisfiability": "satisfiable",
+    "tautology": false,
+    "ast_size": 2,
+    "ast_depth": 1,
+    "temporal_depth": 1,
+    "operator_counts": {
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  }
+]

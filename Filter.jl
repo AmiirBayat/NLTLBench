@@ -1,10 +1,9 @@
 
-
 ################################################################################################
 # Filtering utilities for generated LTL formulas.                                              #
 #                                                                                              #
 # This file implements three practical filters:                                                #
-#   1) trivial formulas, detected via rewrite-based simplification                             #
+#   1) trivial formulas, detected via algorithmic simplification / normalization               #
 #   2) obviously unsatisfiable formulas                                                        #
 #   3) redundant formulas with respect to an existing dataset                                  #
 #      (exact, normalized, and optional semantic redundancy)                                   #
@@ -16,20 +15,21 @@
 #   proposition names are treated as duplicates.                                               #
 # - Optional semantic redundancy is checked by language equivalence against already accepted    #
 #   formulas, using an external LTL backend when available.                                    #
-# - The triviality filter is rewrite-based: we first simplify the formula using sound          #
-#   equivalence-preserving rewrite rules, then classify the result.                            #
-# - The unsatisfiability filter implemented here is conservative and syntactic. It catches     #
-#   obvious contradictions, but it is NOT a complete LTL satisfiability solver.                #
+# - The triviality filter first tries Spot-backed simplification / normalization, then falls   #
+#   back to a small local rewrite system if Spot is unavailable.                               #
+# - No benchmark-style filter is applied to nested temporal operators by default.              #
+# - The unsatisfiability filter implemented here is conservative and syntactic unless the      #
+#   caller separately uses the exact Spot-based satisfiability utilities.                      #
 #                                                                                              #
 # Literature notes                                                                             #
 # ----------------                                                                             #
-# - The rewrite-based design is inspired by normalization work for LTL, especially:            #
-#     Esparza, Rubio, Sickert (2022),                                                          #
-#     "A Simple Rewrite System for the Normalization of Linear Temporal Logic".                #
+# - The rewrite-based normalization direction is inspired by normalization work for LTL,       #
+#   especially Esparza, Rubio, Sickert (2022),                                                 #
+#   "A Simple Rewrite System for the Normalization of Linear Temporal Logic".                  #
 # - For exact LTL satisfiability and equivalence, the standard literature is automata/tableau  #
 #   based, e.g. Vardi & Wolper (1986) and Gerth, Peled, Vardi & Wolper (1995).                 #
-# - The semantic redundancy check implemented below uses equivalence of omega-languages,        #
-#   operationalized through an external backend such as Spot's `ltlfilt --equivalent-to`.      #
+# - Operationally, this file can use Spot's `ltlfilt` as a backend for simplification and      #
+#   semantic equivalence checks.                                                               #
 ################################################################################################
 #
 # ----------------------------------------------------------------------------------------------
@@ -43,6 +43,17 @@ Return `true` if Spot's `ltlfilt` executable is available on the current machine
 """
 function ltlfilt_available()
     return Sys.which("ltlfilt") !== nothing
+end
+
+"""
+    require_ltlfilt()
+
+Throw an informative error if Spot's `ltlfilt` executable is not available.
+"""
+function require_ltlfilt()
+    if !ltlfilt_available()
+        throw(ArgumentError("Spot's `ltlfilt` executable was not found in PATH. Install Spot and ensure `ltlfilt` is available from the command line."))
+    end
 end
 
 """
@@ -197,7 +208,76 @@ function has_temporal_operator(formula::BinaryLTL)
 end
 
 # ----------------------------------------------------------------------------------------------
-# Rewrite-based simplification and triviality checks
+# Spot-backed simplification / normalization
+# ----------------------------------------------------------------------------------------------
+
+"""
+    simplify_formula_spot(formula)
+
+Simplify an LTL formula using Spot's `ltlfilt -r` rewrite/simplification backend and return the
+simplified formula as a string.
+"""
+function simplify_formula_spot(formula::LTLFormula)
+    require_ltlfilt()
+
+    formula_str = formula_to_string(formula)
+    ltlfilt_path = Sys.which("ltlfilt")
+
+    output = read(`$(ltlfilt_path) -f $(formula_str) -r`, String)
+    return strip(output)
+end
+
+"""
+    render_formula_spot(formula; simplify=true, full_parentheses=true)
+
+Render an LTL formula using Spot. This is intended for human-readable display and canonical
+string export. By default it applies Spot simplification (`-r`) and requests full parentheses
+(`-p`) for readability.
+"""
+function render_formula_spot(
+    formula::LTLFormula;
+    simplify::Bool = true,
+    full_parentheses::Bool = true,
+)
+    require_ltlfilt()
+
+    formula_str = formula_to_string(formula)
+    ltlfilt_path = Sys.which("ltlfilt")
+
+    cmd = Cmd([
+        ltlfilt_path,
+        "-f", formula_str,
+        simplify ? "-r" : "",
+        full_parentheses ? "-p" : "",
+    ])
+    output = read(cmd, String)
+    return strip(output)
+end
+
+"""
+    normalize_formula_string(formula; prefer_spot=true)
+
+Return a normalized string representation of `formula`. When `prefer_spot=true` and Spot is
+available, use Spot's simplification backend first; otherwise fall back to the local rewrite
+system.
+"""
+function normalize_formula_string(formula::LTLFormula; prefer_spot::Bool = true)
+    if prefer_spot && ltlfilt_available()
+        return render_formula_spot(formula; simplify=true, full_parentheses=true)
+    end
+    return formula_to_string(simplify_formula_local(formula))
+end
+
+# ----------------------------------------------------------------------------------------------
+# Benchmark policy filters
+# ----------------------------------------------------------------------------------------------
+
+function is_non_temporal(formula::LTLFormula)
+    return !has_temporal_operator(formula)
+end
+
+# ----------------------------------------------------------------------------------------------
+# Local fallback simplification and triviality checks
 # design inspired by Esparza, Rubio, Sickert (2022), "A Simple Rewrite System for the Normalization of Linear Temporal Logic"
 # ----------------------------------------------------------------------------------------------
 
@@ -225,12 +305,12 @@ function simpler_formula(a::LTLFormula, b::LTLFormula)
     return formula_complexity_tuple(a) <= formula_complexity_tuple(b) ? a : b
 end
 
-function rewrite_once(formula::AP)
+function rewrite_once_local(formula::AP)
     return formula
 end
 
-function rewrite_once(formula::UnaryLTL)
-    child = simplify_formula(formula.child)
+function rewrite_once_local(formula::UnaryLTL)
+    child = simplify_formula_local(formula.child)
 
     if formula.op == :!
         if is_true(child)
@@ -245,12 +325,16 @@ function rewrite_once(formula::UnaryLTL)
             return LTL_TRUE
         elseif is_false(child)
             return LTL_FALSE
+        elseif child isa UnaryLTL && child.op == :G
+            return child
         end
     elseif formula.op == :F
         if is_true(child)
             return LTL_TRUE
         elseif is_false(child)
             return LTL_FALSE
+        elseif child isa UnaryLTL && child.op == :F
+            return child
         end
     elseif formula.op == :X
         if is_true(child)
@@ -263,9 +347,9 @@ function rewrite_once(formula::UnaryLTL)
     return UnaryLTL(formula.op, child)
 end
 
-function rewrite_once(formula::BinaryLTL)
-    left = simplify_formula(formula.left)
-    right = simplify_formula(formula.right)
+function rewrite_once_local(formula::BinaryLTL)
+    left = simplify_formula_local(formula.left)
+    right = simplify_formula_local(formula.right)
     op = formula.op
 
     if op == :&
@@ -298,7 +382,7 @@ function rewrite_once(formula::BinaryLTL)
         elseif is_true(left)
             return right
         elseif is_false(right)
-            return simplify_formula(UnaryLTL(:!, left))
+            return simplify_formula_local(UnaryLTL(:!, left))
         elseif same_formula(left, right)
             return LTL_TRUE
         end
@@ -310,9 +394,9 @@ function rewrite_once(formula::BinaryLTL)
         elseif is_true(right)
             return left
         elseif is_false(left)
-            return simplify_formula(UnaryLTL(:!, right))
+            return simplify_formula_local(UnaryLTL(:!, right))
         elseif is_false(right)
-            return simplify_formula(UnaryLTL(:!, left))
+            return simplify_formula_local(UnaryLTL(:!, left))
         end
     elseif op == :U
         if is_true(right)
@@ -323,6 +407,10 @@ function rewrite_once(formula::BinaryLTL)
             return right
         elseif is_true(left)
             return UnaryLTL(:F, right)
+        elseif same_formula(left, right)
+            return left
+        elseif right isa UnaryLTL && right.op == :F
+            return right
         end
     elseif op == :R
         if is_true(left)
@@ -353,11 +441,11 @@ function rewrite_once(formula::BinaryLTL)
     return BinaryLTL(op, left, right)
 end
 
-function simplify_formula(formula::LTLFormula)
+function simplify_formula_local(formula::LTLFormula)
     current = formula
 
     while true
-        rewritten = rewrite_once(current)
+        rewritten = rewrite_once_local(current)
         if formula_to_string(rewritten) == formula_to_string(current)
             return rewritten
         end
@@ -365,25 +453,45 @@ function simplify_formula(formula::LTLFormula)
     end
 end
 
+"""
+    simplify_formula(formula; prefer_spot=true)
+
+Return a simplified string representation of `formula`. When Spot is available and
+`prefer_spot=true`, use Spot-backed simplification; otherwise use the local fallback rewrite
+system and return its rendered form.
+"""
+function simplify_formula(formula::LTLFormula; prefer_spot::Bool = true)
+    return normalize_formula_string(formula; prefer_spot=prefer_spot)
+end
+
+"""
+    simplifies_to_constant(formula; prefer_spot=true)
+
+Return `true` if simplification reduces `formula` to `true` or `false`.
+"""
+function simplifies_to_constant(formula::LTLFormula; prefer_spot::Bool = true)
+    simplified_str = simplify_formula(formula; prefer_spot=prefer_spot)
+    return simplified_str in ("true", "false")
+end
+
+
 function is_constant_formula(formula::LTLFormula)
     return is_true(formula) || is_false(formula)
 end
 
-"""
-    is_trivial(formula)
+function is_constant_string(formula_str::AbstractString)
+    return formula_str in ("true", "false")
+end
 
-Return `true` if the formula simplifies, under sound rewrite rules, to a constant or to a
-strictly smaller formula according to a reduction measure based on structural complexity.
-Pure canonical reordering does not count as triviality.
-"""
 function is_trivial(formula::LTLFormula)
-    simplified = simplify_formula(formula)
+    simplified_local = simplify_formula_local(formula)
+    simplified_str = simplify_formula(formula)
 
-    if is_constant_formula(simplified)
+    if is_constant_string(simplified_str)
         return true
     end
 
-    return formula_reduction_tuple(simplified) < formula_reduction_tuple(formula)
+    return formula_reduction_tuple(simplified_local) < formula_reduction_tuple(formula)
 end
 
 # ----------------------------------------------------------------------------------------------
@@ -479,6 +587,7 @@ end
 
 Return a vector of rejection reasons among:
 - `:trivial`
+- `:non_temporal`
 - `:unsatisfiable`
 - `:redundant`
 
@@ -489,12 +598,18 @@ function filter_reasons(
     formula::LTLFormula;
     existing_keys::Set{String} = Set{String}(),
     redundancy_mode::Symbol = :normalized,
+    require_temporal_operator::Bool = true,
 )
     reasons = Symbol[]
 
     if is_trivial(formula)
         push!(reasons, :trivial)
     end
+
+    if require_temporal_operator && is_non_temporal(formula)
+        push!(reasons, :non_temporal)
+    end
+
 
     if is_unsatisfiable(formula)
         push!(reasons, :unsatisfiable)
@@ -507,13 +622,18 @@ function filter_reasons(
     return reasons
 end
 
-
 function passes_filters(
     formula::LTLFormula;
     existing_keys::Set{String} = Set{String}(),
     redundancy_mode::Symbol = :normalized,
+    require_temporal_operator::Bool = true,
 )
-    return isempty(filter_reasons(formula; existing_keys=existing_keys, redundancy_mode=redundancy_mode))
+    return isempty(filter_reasons(
+        formula;
+        existing_keys=existing_keys,
+        redundancy_mode=redundancy_mode,
+        require_temporal_operator=require_temporal_operator,
+    ))
 end
 
 # Attempt to salvage a simplified version of the formula if it passes all filters
@@ -521,15 +641,20 @@ function salvage_simplified_formula(
     formula::LTLFormula;
     existing_keys::Set{String} = Set{String}(),
     redundancy_mode::Symbol = :normalized,
+    require_temporal_operator::Bool = true,
 )
-    simplified = simplify_formula(formula)
+    simplified = simplify_formula_local(formula)
 
-    # If no actual simplification happened, nothing to salvage
     if formula_to_string(simplified) == formula_to_string(formula)
         return nothing
     end
 
-    reasons = filter_reasons(simplified; existing_keys=existing_keys, redundancy_mode=redundancy_mode)
+    reasons = filter_reasons(
+        simplified;
+        existing_keys=existing_keys,
+        redundancy_mode=redundancy_mode,
+        require_temporal_operator=require_temporal_operator,
+    )
     if isempty(reasons)
         return simplified
     end
@@ -540,7 +665,8 @@ end
 """
     filter_formulas(formulas; existing_keys=Set{String}(), redundancy_mode=:normalized,
                     mutate_keys=true, semantic_redundancy=false,
-                    semantic_backend=:spot, semantic_existing_formulas=LTLFormula[])
+                    semantic_backend=:spot, semantic_existing_formulas=LTLFormula[],
+                    require_temporal_operator=true)
 
 Filter a batch of formulas and return `(accepted, rejected)` where:
 - `accepted` is a vector of formulas that passed all filters
@@ -552,6 +678,9 @@ simplified version. If the simplified formula passes all filters, it is accepted
 If `semantic_redundancy=true`, the function also checks equivalence against already accepted
 formulas and `semantic_existing_formulas`. If two formulas are semantically equivalent, the
 minimal representative according to `formula_preference_tuple` is kept.
+
+If `require_temporal_operator=true`, purely propositional formulas are rejected so the benchmark
+focuses on temporal reasoning.
 
 If `mutate_keys=true`, accepted formulas are added to `existing_keys` as they are accepted,
 so exact/normalized redundancy is checked both against prior dataset entries and within the
@@ -565,6 +694,7 @@ function filter_formulas(
     semantic_redundancy::Bool = false,
     semantic_backend::Symbol = :spot,
     semantic_existing_formulas::Vector{<:LTLFormula} = LTLFormula[],
+    require_temporal_operator::Bool = true,
 )
     accepted = LTLFormula[]
     rejected = Vector{Tuple{LTLFormula, Vector{Symbol}}}()
@@ -584,17 +714,28 @@ function filter_formulas(
 
     for formula in formulas
         candidate = formula
-        reasons = filter_reasons(candidate; existing_keys=existing_keys, redundancy_mode=redundancy_mode)
+        reasons = filter_reasons(
+            candidate;
+            existing_keys=existing_keys,
+            redundancy_mode=redundancy_mode,
+            require_temporal_operator=require_temporal_operator,
+        )
 
         if reasons == [:trivial]
             simplified = salvage_simplified_formula(
                 candidate;
                 existing_keys=existing_keys,
                 redundancy_mode=redundancy_mode,
+                require_temporal_operator=require_temporal_operator,
             )
             if !isnothing(simplified)
                 candidate = simplified
-                reasons = filter_reasons(candidate; existing_keys=existing_keys, redundancy_mode=redundancy_mode)
+                reasons = filter_reasons(
+                    candidate;
+                    existing_keys=existing_keys,
+                    redundancy_mode=redundancy_mode,
+                    require_temporal_operator=require_temporal_operator,
+                )
             end
         end
 
@@ -649,4 +790,6 @@ if abspath(PROGRAM_FILE) == @__FILE__
     println("  accepted, rejected = filter_formulas(formulas; redundancy_mode=:normalized)")
     println("  accepted, rejected = filter_formulas(formulas; redundancy_mode=:normalized, semantic_redundancy=true)")
     println("  simplified = simplify_formula(formulas[1])")
+    println("  render_formula_spot(formulas[1]; simplify=true, full_parentheses=true)")
+    println("  simplified_local = formula_to_string(simplify_formula_local(formulas[1]))")
 end
