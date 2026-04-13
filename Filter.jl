@@ -13,6 +13,8 @@
 # - The redundancy filter uses exact or normalized canonical keys as cheap prefilters.         #
 # - The normalized key implements canonical AP renaming, so formulas that differ only by       #
 #   proposition names are treated as duplicates.                                               #
+# - A local canonical form is also available for saving formulas after simplification + AP      #
+#   renumbering in order of first appearance.                                                  #
 # - Optional semantic redundancy is checked by language equivalence against already accepted    #
 #   formulas, using an external LTL backend when available.                                    #
 # - The triviality filter first tries Spot-backed simplification / normalization, then falls   #
@@ -170,6 +172,31 @@ function normalized_formula_string_local(formula::LTLFormula)
     return formula_to_string(normalize_formula_local(formula))
 end
 
+"""
+    canonicalize_formula_local(formula)
+
+Return a locally canonicalized AST obtained by first applying the local simplifier and then
+renumbering atomic propositions in order of first appearance as `prop_1`, `prop_2`, ...
+
+Examples:
+- `F(prop_4)` becomes `F(prop_1)`
+- `(prop_3 U prop_7)` becomes `(prop_1 U prop_2)`
+"""
+function canonicalize_formula_local(formula::LTLFormula)
+    simplified = simplify_formula_local(formula)
+    return normalize_formula_local(simplified)
+end
+
+"""
+    canonical_formula_string_local(formula)
+
+Return the string form of `canonicalize_formula_local(formula)`.
+This is intended for dataset export and canonical saved representations.
+"""
+function canonical_formula_string_local(formula::LTLFormula)
+    return formula_to_string(canonicalize_formula_local(formula))
+end
+
 function redundancy_key(formula::LTLFormula; mode::Symbol = :normalized)
     if mode == :exact
         return formula_to_string(formula)
@@ -193,7 +220,16 @@ is_false(formula::LTLFormula) = false
 is_negation_of(a::LTLFormula, b::LTLFormula) = b isa UnaryLTL && b.op == :! && formula_to_string(a) == formula_to_string(b.child)
 is_negation_pair(a::LTLFormula, b::LTLFormula) = is_negation_of(a, b) || is_negation_of(b, a)
 
+
 same_formula(a::LTLFormula, b::LTLFormula) = formula_to_string(a) == formula_to_string(b)
+
+function is_eventually_of(inner::LTLFormula, outer::LTLFormula)
+    return outer isa UnaryLTL && outer.op == :F && same_formula(inner, outer.child)
+end
+
+function is_globally_of(inner::LTLFormula, outer::LTLFormula)
+    return outer isa UnaryLTL && outer.op == :G && same_formula(inner, outer.child)
+end
 
 function has_temporal_operator(formula::AP)
     return false
@@ -363,6 +399,14 @@ function rewrite_once_local(formula::BinaryLTL)
             return left
         elseif is_negation_pair(left, right)
             return LTL_FALSE
+        elseif is_eventually_of(left, right)
+            return left
+        elseif is_eventually_of(right, left)
+            return right
+        elseif is_globally_of(left, right)
+            return right
+        elseif is_globally_of(right, left)
+            return left
         end
     elseif op == :|
         if is_true(left) || is_true(right)
@@ -375,6 +419,14 @@ function rewrite_once_local(formula::BinaryLTL)
             return left
         elseif is_negation_pair(left, right)
             return LTL_TRUE
+        elseif is_eventually_of(left, right)
+            return right
+        elseif is_eventually_of(right, left)
+            return left
+        elseif is_globally_of(left, right)
+            return left
+        elseif is_globally_of(right, left)
+            return right
         end
     elseif op == :->
         if is_false(left) || is_true(right)

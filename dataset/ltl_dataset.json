@@ -1,40 +1,954 @@
 [
   {
     "id": 1,
-    "formula": "(G(prop_2) <-> prop_1)",
-    "simplified_formula": "(prop_1 <-> G(prop_2))",
-    "selected_formula": "(prop_1 <-> G(prop_2))",
-    "selected_representation": "simplified",
-    "satisfiability": "satisfiable",
-    "tautology": false,
+    "LTL": "G(prop_1)",
+    "generated_formula": "G(prop_4)",
+    "simplified_formula": "G(prop_4)",
+    "ast_size": 2,
+    "ast_depth": 1,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety"
+    ]
+  },
+  {
+    "id": 2,
+    "LTL": "F(prop_1)",
+    "generated_formula": "F(prop_1)",
+    "simplified_formula": "F(prop_1)",
+    "ast_size": 2,
+    "ast_depth": 1,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 3,
+    "LTL": "!(G(prop_1))",
+    "generated_formula": "!(G(prop_2))",
+    "simplified_formula": "!(G(prop_2))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "!": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety"
+    ]
+  },
+  {
+    "id": 4,
+    "LTL": "G(F(prop_1))",
+    "generated_formula": "G(F(prop_2))",
+    "simplified_formula": "G(F(prop_2))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "F": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "recurrence"
+    ]
+  },
+  {
+    "id": 5,
+    "LTL": "(prop_1 & G(prop_2))",
+    "generated_formula": "(prop_1 & G(prop_4))",
+    "simplified_formula": "(prop_1 & G(prop_4))",
     "ast_size": 4,
     "ast_depth": 2,
     "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "&": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety"
+    ]
+  },
+  {
+    "id": 6,
+    "LTL": "(prop_1 | F(prop_2))",
+    "generated_formula": "(F(prop_1) | prop_4)",
+    "simplified_formula": "(prop_4 | F(prop_1))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "F": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 7,
+    "LTL": "(prop_1 -> G(prop_2))",
+    "generated_formula": "(prop_1 -> G(prop_2))",
+    "simplified_formula": "(prop_1 -> G(prop_2))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "->": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "conditional"
+    ]
+  },
+  {
+    "id": 8,
+    "LTL": "!(F(prop_1))",
+    "generated_formula": "!(F(prop_3))",
+    "simplified_formula": "!(F(prop_3))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "!": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 9,
+    "LTL": "(G(prop_1) -> prop_2)",
+    "generated_formula": "(G(prop_2) -> prop_1)",
+    "simplified_formula": "(G(prop_2) -> prop_1)",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "->": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "conditional"
+    ]
+  },
+  {
+    "id": 10,
+    "LTL": "(prop_1 & F(prop_2))",
+    "generated_formula": "(prop_2 & F(prop_1))",
+    "simplified_formula": "(prop_2 & F(prop_1))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "&": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 11,
+    "LTL": "(prop_1 <-> G(prop_1))",
+    "generated_formula": "(prop_4 <-> G(prop_4))",
+    "simplified_formula": "(prop_4 <-> G(prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
     "operator_counts": {
       "<->": 1,
       "G": 1
     },
     "temporal_behavior": [
-      "safety_like",
+      "safety",
       "conditional"
     ]
   },
   {
-    "id": 2,
-    "formula": "X(prop_2)",
-    "simplified_formula": "X(prop_2)",
-    "selected_formula": "X(prop_2)",
-    "selected_representation": "original",
-    "satisfiability": "satisfiable",
-    "tautology": false,
+    "id": 12,
+    "LTL": "(prop_1 <-> G(prop_2))",
+    "generated_formula": "(G(prop_4) <-> prop_3)",
+    "simplified_formula": "(prop_3 <-> G(prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "<->": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "conditional"
+    ]
+  },
+  {
+    "id": 13,
+    "LTL": "F((prop_1 | prop_2))",
+    "generated_formula": "F((prop_4 | prop_3))",
+    "simplified_formula": "F((prop_3 | prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "F": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 14,
+    "LTL": "F(G(prop_1))",
+    "generated_formula": "F(G(prop_3))",
+    "simplified_formula": "F(G(prop_3))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "F": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "persistence"
+    ]
+  },
+  {
+    "id": 15,
+    "LTL": "F((prop_1 & prop_2))",
+    "generated_formula": "F((prop_3 & prop_1))",
+    "simplified_formula": "F((prop_1 & prop_3))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "&": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 16,
+    "LTL": "G((prop_1 <-> prop_2))",
+    "generated_formula": "G((prop_1 <-> prop_4))",
+    "simplified_formula": "G((prop_1 <-> prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "<->": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "conditional"
+    ]
+  },
+  {
+    "id": 17,
+    "LTL": "G((prop_1 & prop_2))",
+    "generated_formula": "G((prop_1 & prop_2))",
+    "simplified_formula": "G((prop_1 & prop_2))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "&": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety"
+    ]
+  },
+  {
+    "id": 18,
+    "LTL": "G((prop_1 | prop_2))",
+    "generated_formula": "G((prop_3 | prop_1))",
+    "simplified_formula": "G((prop_1 | prop_3))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "G": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "safety"
+    ]
+  },
+  {
+    "id": 19,
+    "LTL": "G((prop_1 -> prop_2))",
+    "generated_formula": "G((prop_4 -> prop_1))",
+    "simplified_formula": "G((prop_4 -> prop_1))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "->": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "conditional"
+    ]
+  },
+  {
+    "id": 20,
+    "LTL": "(prop_1 <-> F(prop_2))",
+    "generated_formula": "(prop_1 <-> F(prop_4))",
+    "simplified_formula": "(prop_1 <-> F(prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "<->": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "conditional"
+    ]
+  },
+  {
+    "id": 21,
+    "LTL": "(F(prop_1) -> prop_1)",
+    "generated_formula": "(F(prop_4) -> prop_4)",
+    "simplified_formula": "(F(prop_4) -> prop_4)",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "->": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "conditional"
+    ]
+  },
+  {
+    "id": 22,
+    "LTL": "F((prop_1 <-> prop_2))",
+    "generated_formula": "F((prop_4 <-> prop_2))",
+    "simplified_formula": "F((prop_2 <-> prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "<->": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "conditional"
+    ]
+  },
+  {
+    "id": 23,
+    "LTL": "(prop_1 | G(prop_2))",
+    "generated_formula": "(G(prop_4) | prop_2)",
+    "simplified_formula": "(prop_2 | G(prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "G": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "safety"
+    ]
+  },
+  {
+    "id": 24,
+    "LTL": "(prop_1 & X(prop_2))",
+    "generated_formula": "(prop_4 & X(prop_2))",
+    "simplified_formula": "(prop_4 & X(prop_2))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "&": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 25,
+    "LTL": "(!(prop_1) <-> F(prop_2))",
+    "generated_formula": "(F(prop_4) <-> !(prop_2))",
+    "simplified_formula": "(!(prop_2) <-> F(prop_4))",
+    "ast_size": 5,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "!": 1,
+      "<->": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "conditional"
+    ]
+  },
+  {
+    "id": 26,
+    "LTL": "(X(prop_1) & X(prop_2))",
+    "generated_formula": "(X(prop_2) & X(prop_1))",
+    "simplified_formula": "(X(prop_1) & X(prop_2))",
+    "ast_size": 5,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "&": 1,
+      "X": 2
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 27,
+    "LTL": "X(prop_1)",
+    "generated_formula": "X(prop_1)",
+    "simplified_formula": "X(prop_1)",
     "ast_size": 2,
     "ast_depth": 1,
     "temporal_depth": 1,
+    "num_atomic_props": 1,
     "operator_counts": {
       "X": 1
     },
     "temporal_behavior": [
       "next_step"
+    ]
+  },
+  {
+    "id": 28,
+    "LTL": "!(X(prop_1))",
+    "generated_formula": "!(X(prop_4))",
+    "simplified_formula": "!(X(prop_4))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "!": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 29,
+    "LTL": "!(X(X(prop_1)))",
+    "generated_formula": "!(X(X(prop_3)))",
+    "simplified_formula": "!(X(X(prop_3)))",
+    "ast_size": 4,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "!": 1,
+      "X": 2
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 30,
+    "LTL": "(prop_1 | X(G(prop_2)))",
+    "generated_formula": "(X(G(prop_3)) | prop_1)",
+    "simplified_formula": "(prop_1 | X(G(prop_3)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "G": 1,
+      "X": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "next_step"
+    ]
+  },
+  {
+    "id": 31,
+    "LTL": "G(X(prop_1))",
+    "generated_formula": "G(X(prop_1))",
+    "simplified_formula": "G(X(prop_1))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "G": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "next_step"
+    ]
+  },
+  {
+    "id": 32,
+    "LTL": "(prop_1 | X(prop_2))",
+    "generated_formula": "(prop_2 | X(prop_1))",
+    "simplified_formula": "(prop_2 | X(prop_1))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "X": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 33,
+    "LTL": "(prop_1 <-> X(prop_2))",
+    "generated_formula": "(prop_1 <-> X(prop_2))",
+    "simplified_formula": "(prop_1 <-> X(prop_2))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "<->": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step",
+      "conditional"
+    ]
+  },
+  {
+    "id": 34,
+    "LTL": "X(X(prop_1))",
+    "generated_formula": "X(X(prop_3))",
+    "simplified_formula": "X(X(prop_3))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "X": 2
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 35,
+    "LTL": "!((prop_1 <-> X(prop_2)))",
+    "generated_formula": "!((X(prop_3) <-> prop_1))",
+    "simplified_formula": "!((prop_1 <-> X(prop_3)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "!": 1,
+      "<->": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step",
+      "conditional"
+    ]
+  },
+  {
+    "id": 36,
+    "LTL": "(G(prop_1) -> prop_1)",
+    "generated_formula": "(G(prop_2) -> prop_2)",
+    "simplified_formula": "(G(prop_2) -> prop_2)",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "->": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "safety",
+      "conditional"
+    ]
+  },
+  {
+    "id": 37,
+    "LTL": "!(F(G(prop_1)))",
+    "generated_formula": "!(F(G(prop_4)))",
+    "simplified_formula": "!(F(G(prop_4)))",
+    "ast_size": 4,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "!": 1,
+      "F": 1,
+      "G": 1
+    },
+    "temporal_behavior": [
+      "persistence"
+    ]
+  },
+  {
+    "id": 38,
+    "LTL": "F((prop_1 -> prop_2))",
+    "generated_formula": "F((prop_3 -> prop_4))",
+    "simplified_formula": "F((prop_3 -> prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "->": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "conditional"
+    ]
+  },
+  {
+    "id": 39,
+    "LTL": "!(F((prop_1 | prop_2)))",
+    "generated_formula": "!(F((prop_3 | prop_4)))",
+    "simplified_formula": "!(F((prop_3 | prop_4)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "!": 1,
+      "F": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 40,
+    "LTL": "!((F(prop_1) -> prop_2))",
+    "generated_formula": "!((F(prop_3) -> prop_2))",
+    "simplified_formula": "!((F(prop_3) -> prop_2))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "!": 1,
+      "->": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "conditional"
+    ]
+  },
+  {
+    "id": 41,
+    "LTL": "F(X(!(prop_1)))",
+    "generated_formula": "F(X(!(prop_2)))",
+    "simplified_formula": "F(X(!(prop_2)))",
+    "ast_size": 4,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "!": 1,
+      "F": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "next_step"
+    ]
+  },
+  {
+    "id": 42,
+    "LTL": "F(X(prop_1))",
+    "generated_formula": "F(X(prop_4))",
+    "simplified_formula": "F(X(prop_4))",
+    "ast_size": 3,
+    "ast_depth": 2,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "F": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "next_step"
+    ]
+  },
+  {
+    "id": 43,
+    "LTL": "(prop_1 -> F(prop_2))",
+    "generated_formula": "(prop_3 -> F(prop_2))",
+    "simplified_formula": "(prop_3 -> F(prop_2))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "->": 1,
+      "F": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "conditional"
+    ]
+  },
+  {
+    "id": 44,
+    "LTL": "X((prop_1 & !(prop_2)))",
+    "generated_formula": "X((!(prop_3) & prop_1))",
+    "simplified_formula": "X((prop_1 & !(prop_3)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "!": 1,
+      "&": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 45,
+    "LTL": "X((prop_1 | prop_2))",
+    "generated_formula": "X((prop_2 | prop_3))",
+    "simplified_formula": "X((prop_2 | prop_3))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "X": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 46,
+    "LTL": "!(X((prop_1 & prop_2)))",
+    "generated_formula": "!(X((prop_3 & prop_2)))",
+    "simplified_formula": "!(X((prop_2 & prop_3)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "!": 1,
+      "&": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step"
+    ]
+  },
+  {
+    "id": 47,
+    "LTL": "X(F((prop_1 <-> prop_2)))",
+    "generated_formula": "X(F((prop_1 <-> prop_2)))",
+    "simplified_formula": "X(F((prop_1 <-> prop_2)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "<->": 1,
+      "F": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "liveness",
+      "next_step",
+      "conditional"
+    ]
+  },
+  {
+    "id": 48,
+    "LTL": "F((prop_1 | G(prop_2)))",
+    "generated_formula": "F((G(prop_3) | prop_2))",
+    "simplified_formula": "F((prop_2 | G(prop_3)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "F": 1,
+      "G": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "other"
+    ]
+  },
+  {
+    "id": 49,
+    "LTL": "X((prop_1 <-> prop_2))",
+    "generated_formula": "X((prop_4 <-> prop_1))",
+    "simplified_formula": "X((prop_1 <-> prop_4))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "<->": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step",
+      "conditional"
+    ]
+  },
+  {
+    "id": 50,
+    "LTL": "(prop_1 | F(!(prop_2)))",
+    "generated_formula": "(F(!(prop_2)) | prop_4)",
+    "simplified_formula": "(prop_4 | F(!(prop_2)))",
+    "ast_size": 5,
+    "ast_depth": 3,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "!": 1,
+      "F": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 51,
+    "LTL": "F(!(F(prop_1)))",
+    "generated_formula": "F(!(F(prop_3)))",
+    "simplified_formula": "F(!(F(prop_3)))",
+    "ast_size": 4,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "!": 1,
+      "F": 2
+    },
+    "temporal_behavior": [
+      "liveness"
+    ]
+  },
+  {
+    "id": 52,
+    "LTL": "X((prop_1 -> prop_2))",
+    "generated_formula": "X((prop_4 -> prop_3))",
+    "simplified_formula": "X((prop_4 -> prop_3))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "->": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step",
+      "conditional"
+    ]
+  },
+  {
+    "id": 53,
+    "LTL": "(prop_1 <-> X(prop_1))",
+    "generated_formula": "(prop_3 <-> X(prop_3))",
+    "simplified_formula": "(prop_3 <-> X(prop_3))",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 1,
+    "operator_counts": {
+      "<->": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step",
+      "conditional"
+    ]
+  },
+  {
+    "id": 54,
+    "LTL": "(X(prop_1) -> prop_2)",
+    "generated_formula": "(X(prop_4) -> prop_1)",
+    "simplified_formula": "(X(prop_4) -> prop_1)",
+    "ast_size": 4,
+    "ast_depth": 2,
+    "temporal_depth": 1,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "->": 1,
+      "X": 1
+    },
+    "temporal_behavior": [
+      "next_step",
+      "conditional"
     ]
   }
 ]
