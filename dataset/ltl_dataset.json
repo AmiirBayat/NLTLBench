@@ -9429,5 +9429,24 @@
     "temporal_behavior": [
       "safety"
     ]
+  },
+  {
+    "id": 500,
+    "LTL": "(F(G(prop_1)) & (prop_1 | prop_2))",
+    "generated_formula": "(F(G(prop_8)) & (prop_8 | prop_6))",
+    "simplified_formula": "((prop_6 | prop_8) & F(G(prop_8)))",
+    "ast_size": 7,
+    "ast_depth": 3,
+    "temporal_depth": 2,
+    "num_atomic_props": 2,
+    "operator_counts": {
+      "&": 1,
+      "F": 1,
+      "G": 1,
+      "|": 1
+    },
+    "temporal_behavior": [
+      "persistence"
+    ]
   }
 ]

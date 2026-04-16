@@ -267,7 +267,7 @@ function main()
     save_json = true
     run_tag = timestamp_string()
 
-    n_formulas = 50
+    n_formulas = 10
     max_depth = 6
     max_ast_size = 10
 
