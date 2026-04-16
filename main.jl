@@ -67,34 +67,21 @@ end
 function accepted_formula_record(id::Int, formula::LTLFormula, sat_status, exact_tautology_check::Bool)
     original_formula = formula_to_string(formula)
     simplified_formula = formula_to_string(simplify_formula_local(formula))
-    selected_formula = canonical_formula_string_local(formula)
-
-    # compute number of distinct atomic propositions
-    function count_atomic_props(f::LTLFormula, seen=Set{String}())
-        if f isa AP
-            push!(seen, f.name)
-        elseif f isa UnaryLTL
-            count_atomic_props(f.child, seen)
-        elseif f isa BinaryLTL
-            count_atomic_props(f.left, seen)
-            count_atomic_props(f.right, seen)
-        end
-        return seen
-    end
-
-    num_atomic_props = length(count_atomic_props(formula))
+    selected_formula = final_selected_formula_string(formula)
+    selected_ast = final_selected_formula_ast(formula)
+    num_atomic_props = length(count_atomic_props(selected_ast))
 
     return OrderedDict(
         "id" => id,
         "LTL" => selected_formula,
         "generated_formula" => original_formula,
         "simplified_formula" => simplified_formula,
-        "ast_size" => ast_size(formula),
-        "ast_depth" => ast_depth(formula),
-        "temporal_depth" => temporal_depth(formula),
+        "ast_size" => ast_size(selected_ast),
+        "ast_depth" => ast_depth(selected_ast),
+        "temporal_depth" => temporal_depth(selected_ast),
         "num_atomic_props" => num_atomic_props,
-        "operator_counts" => OrderedDict(string(k) => v for (k, v) in sort!(collect(operator_counts(formula)); by=x -> string(x[1]))),
-        "temporal_behavior" => classify_temporal_behavior(formula),
+        "operator_counts" => OrderedDict(string(k) => v for (k, v) in sort!(collect(operator_counts(selected_ast)); by=x -> string(x[1]))),
+        "temporal_behavior" => classify_temporal_behavior(selected_ast),
     )
 end
 function classify_temporal_behavior(formula::LTLFormula)
@@ -136,10 +123,11 @@ function classify_temporal_behavior(formula::LTLFormula)
 end
 
 function build_accepted_records(accepted_statuses, exact_tautology_check::Bool)
-    return [
-        accepted_formula_record(i, item[1], item[2], exact_tautology_check)
-        for (i, item) in enumerate(accepted_statuses)
-    ]
+    records = OrderedDict[]
+    for item in accepted_statuses
+        push!(records, accepted_formula_record(length(records) + 1, item[1], item[2], exact_tautology_check))
+    end
+    return records
 end
 
 function merge_records_into_dataset_json(
@@ -215,6 +203,10 @@ def deduplicate_records(records):
 
 existing_records = deduplicate_records(existing_records)
 
+added_count = 0
+replaced_count = 0
+skipped_count = 0
+
 for new_record in new_records:
     matched_index = None
     for i, existing_record in enumerate(existing_records):
@@ -224,9 +216,13 @@ for new_record in new_records:
 
     if matched_index is None:
         existing_records.append(new_record)
+        added_count += 1
     else:
         if preference_tuple(new_record) < preference_tuple(existing_records[matched_index]):
             existing_records[matched_index] = new_record
+            replaced_count += 1
+        else:
+            skipped_count += 1
 
 for idx, record in enumerate(existing_records, start=1):
     record['id'] = idx
@@ -234,9 +230,11 @@ for idx, record in enumerate(existing_records, start=1):
 with open(DATASET_PATH, 'w', encoding='utf-8') as f:
     json.dump(existing_records, f, indent=2, ensure_ascii=False)
     f.write('\n')
+print(json.dumps({'added': added_count, 'replaced': replaced_count, 'skipped': skipped_count, 'final_size': len(existing_records)}))
 """
 
-    run(`python3 -c $(python_code) $(dataset_path) $(temp_new_path) $(string(semantic_redundancy))`)
+    merge_summary = read(`python3 -c $(python_code) $(dataset_path) $(temp_new_path) $(string(semantic_redundancy))`, String)
+    println("Dataset merge summary: ", strip(merge_summary))
     rm(temp_new_path; force=true)
 end
 
@@ -261,8 +259,8 @@ function main()
     # --------------------------------------------------------------------------
     # User configuration
     # --------------------------------------------------------------------------
-    atomic_props = ["prop_1", "prop_2", "prop_3", "prop_4"]
-    temporal_ops = [:X, :F, :G]
+    atomic_props = ["prop_1", "prop_2", "prop_3", "prop_4",  "prop_5", "prop_6", "prop_7", "prop_8", "prop_9", "prop_10"]
+    temporal_ops = [:X, :F, :G, :U]
     output_dir = ensure_directory("dataset")
     dataset_name = "ltl_dataset"
     dataset_json_path = joinpath(output_dir, "$(dataset_name).json")
@@ -270,18 +268,17 @@ function main()
     run_tag = timestamp_string()
 
     n_formulas = 50
-    max_depth = 3
-    max_ast_size = 5
+    max_depth = 6
+    max_ast_size = 10
 
     p_atom_at_max_depth = 1.0
-    p_atom_before_max_depth = 0.35
-    unary_weight = 0.50
-    binary_weight = 0.25
-
+    p_atom_before_max_depth = 0.18
+    unary_weight = 0.25
+    binary_weight = 0.55
     allow_boolean_constants = false
     boolean_constants = ["true", "false"]
     boolean_unary_ops = [:!]
-    boolean_binary_ops = [:&, :|, :->, Symbol("<->")]
+    boolean_binary_ops = [:&, :|]#, :->, Symbol("<->")]
 
     max_attempts_per_formula = 500
     enforce_unique_formulas = true
@@ -347,6 +344,38 @@ function main()
     accepted_statuses = exact_satisfiability_check ? classify_satisfiability(accepted) : [(formula, :unknown) for formula in accepted]
     rejected_statuses = exact_satisfiability_check ? classify_satisfiability([item[1] for item in rejected]) : [(item[1], :unknown) for item in rejected]
 
+    # --------------------------------------------------------------------------
+    # Enforce satisfiable-only dataset
+    # --------------------------------------------------------------------------
+
+    if exact_satisfiability_check
+        before_count = length(accepted_statuses)
+        accepted_statuses = [item for item in accepted_statuses if item[2] == :satisfiable]
+        removed = before_count - length(accepted_statuses)
+        if removed > 0
+            println("Removed $(removed) unsatisfiable formulas before saving.")
+        end
+        # Keep `accepted` consistent with `accepted_statuses` for printing below.
+        accepted = [item[1] for item in accepted_statuses]
+    else
+        throw(ArgumentError("Refusing to save to dataset without exact satisfiability checking enabled. Set `exact_satisfiability_check = true`."))
+    end
+
+    # --------------------------------------------------------------------------
+    # Enforce that the final saved formula remains temporal after Spot simplification
+    # --------------------------------------------------------------------------
+    if require_temporal_operator
+        before_count = length(accepted_statuses)
+        accepted_statuses = [
+            item for item in accepted_statuses
+            if has_temporal_operator(final_selected_formula_ast(item[1]))
+        ]
+        removed = before_count - length(accepted_statuses)
+        if removed > 0
+            println("Removed $(removed) formulas whose final Spot-simplified form is non-temporal before saving.")
+        end
+        accepted = [item[1] for item in accepted_statuses]
+    end
 
     # --------------------------------------------------------------------------
     # Save results
@@ -366,8 +395,8 @@ function main()
     # Display results
     # --------------------------------------------------------------------------
     println("Generated $(length(formulas)) candidate LTL formulas.\n")
-    println("Note: this simple config has a small unique formula space, so `n_formulas` is kept modest to avoid exhausting the generator.\n")
-    println("Accepted $(length(accepted)) formulas after filtering.")
+    println()
+    println("Accepted $(length(accepted)) formulas after filtering (satisfiable-only enforced).")
     println("Rejected $(length(rejected)) formulas after filtering.\n")
     println("Filtering configuration:")
     println("  Redundancy mode: ", redundancy_mode)
@@ -390,7 +419,7 @@ function main()
         if simplified_local_str != formula_to_string(formula)
             println("  Simplified form: ", simplified_local_str)
         end
-        canonical_local_str = canonical_formula_string_local(formula)
+        canonical_local_str = final_selected_formula_string(formula)
         if canonical_local_str != simplified_local_str
             println("  Selected formula: ", canonical_local_str)
         end
@@ -416,7 +445,7 @@ function main()
             if simplified_local_str != formula_to_string(formula)
                 println("  Simplified form: ", simplified_local_str)
             end
-            canonical_local_str = canonical_formula_string_local(formula)
+            canonical_local_str = final_selected_formula_string(formula)
             if canonical_local_str != simplified_local_str
                 println("  Selected formula: ", canonical_local_str)
             end

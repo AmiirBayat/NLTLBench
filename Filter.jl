@@ -247,6 +247,7 @@ end
 # Spot-backed simplification / normalization
 # ----------------------------------------------------------------------------------------------
 
+
 """
     simplify_formula_spot(formula)
 
@@ -261,6 +262,62 @@ function simplify_formula_spot(formula::LTLFormula)
 
     output = read(`$(ltlfilt_path) -f $(formula_str) -r`, String)
     return strip(output)
+end
+
+"""
+    simplify_formula_spot_level(formula; level=3, full_parentheses=true)
+
+Simplify an LTL formula using Spot's simplifier at a chosen level. Spot documents `-r`/
+`--simplify[=LEVEL]`, with level 3 as the default when omitted.
+This helper is intended for testing Spot-only simplification behavior.
+"""
+function simplify_formula_spot_level(
+    formula::LTLFormula;
+    level::Int = 3,
+    full_parentheses::Bool = true,
+)
+    require_ltlfilt()
+    level in 1:3 || throw(ArgumentError("`level` must be 1, 2, or 3."))
+
+    formula_str = formula_to_string(formula)
+    ltlfilt_path = Sys.which("ltlfilt")
+
+    args = String[ltlfilt_path, "-f", formula_str, "--simplify=$(level)"]
+    if full_parentheses
+        push!(args, "-p")
+    end
+
+    output = read(Cmd(args), String)
+    return strip(output)
+end
+
+"""
+    spot_simplifies_to(formula, expected; level=3)
+
+Return `true` iff Spot's simplifier rewrites `formula` to something semantically equivalent to
+`expected` at the requested simplification level. This is useful for testing cases such as
+`F(X(F(phi)))` versus `X(F(phi))` without changing the main filtering pipeline.
+"""
+function spot_simplifies_to(
+    formula::LTLFormula,
+    expected::AbstractString;
+    level::Int = 3,
+)
+    require_ltlfilt()
+    ltlfilt_path = Sys.which("ltlfilt")
+
+    simplified = simplify_formula_spot_level(formula; level=level, full_parentheses=true)
+    cmd = `$(ltlfilt_path) -f $(simplified) --equivalent-to $(expected) -q`
+    process = run(cmd; wait=false)
+    wait(process)
+
+    if process.exitcode == 0
+        return true
+    elseif process.exitcode == 1
+        return false
+    else
+        throw(ErrorException("`ltlfilt` failed while checking whether Spot's simplification of `$(formula_to_string(formula))` is equivalent to `$(expected)` (exit code $(process.exitcode))."))
+    end
 end
 
 """
@@ -363,6 +420,8 @@ function rewrite_once_local(formula::UnaryLTL)
             return LTL_FALSE
         elseif child isa UnaryLTL && child.op == :G
             return child
+        elseif child isa UnaryLTL && child.op == :X
+            return UnaryLTL(:X, UnaryLTL(:G, child.child))
         end
     elseif formula.op == :F
         if is_true(child)
@@ -371,6 +430,8 @@ function rewrite_once_local(formula::UnaryLTL)
             return LTL_FALSE
         elseif child isa UnaryLTL && child.op == :F
             return child
+        elseif child isa UnaryLTL && child.op == :X
+            return UnaryLTL(:X, UnaryLTL(:F, child.child))
         end
     elseif formula.op == :X
         if is_true(child)
@@ -843,5 +904,312 @@ if abspath(PROGRAM_FILE) == @__FILE__
     println("  accepted, rejected = filter_formulas(formulas; redundancy_mode=:normalized, semantic_redundancy=true)")
     println("  simplified = simplify_formula(formulas[1])")
     println("  render_formula_spot(formulas[1]; simplify=true, full_parentheses=true)")
+    println("  spot_simplifies_to(formulas[1], \"X(F((prop_1 | prop_2)))\")")
     println("  simplified_local = formula_to_string(simplify_formula_local(formulas[1]))")
+end
+
+
+# Helper to normalize atomic proposition names in a string
+
+function normalize_prop_names_in_string(formula_str::AbstractString)
+    pattern = r"prop_\d+"
+    mapping = Dict{String,String}()
+    counter = 1
+
+    return replace(String(formula_str), pattern => (m -> begin
+        key = String(m)
+        if !haskey(mapping, key)
+            mapping[key] = "prop_$(counter)"
+            counter += 1
+        end
+        return mapping[key]
+    end))
+end
+
+
+# --------------------------------------------------------------------------
+# LTL formula string parsing and utilities for Spot-simplified formulas
+# --------------------------------------------------------------------------
+function tokenize_ltl_formula_string(formula_str::AbstractString)
+    s = String(formula_str)
+    tokens = Vector{Tuple{Symbol,String}}()
+    i = firstindex(s)
+
+    while i <= lastindex(s)
+        ch = s[i]
+
+        if isspace(ch)
+            i = nextind(s, i)
+            continue
+        elseif ch == '('
+            push!(tokens, (:LPAREN, "("))
+            i = nextind(s, i)
+        elseif ch == ')'
+            push!(tokens, (:RPAREN, ")"))
+            i = nextind(s, i)
+        elseif ch == '!'
+            push!(tokens, (:NOT, "!"))
+            i = nextind(s, i)
+        elseif ch == '&'
+            push!(tokens, (:AND, "&"))
+            i = nextind(s, i)
+        elseif ch == '|'
+            push!(tokens, (:OR, "|"))
+            i = nextind(s, i)
+        elseif ch == 'U'
+            push!(tokens, (:U, "U"))
+            i = nextind(s, i)
+        elseif ch == 'W'
+            push!(tokens, (:W, "W"))
+            i = nextind(s, i)
+        elseif ch == 'R'
+            push!(tokens, (:R, "R"))
+            i = nextind(s, i)
+        elseif ch == 'M'
+            push!(tokens, (:M, "M"))
+            i = nextind(s, i)
+        elseif ch == 'X'
+            push!(tokens, (:X, "X"))
+            i = nextind(s, i)
+        elseif ch == 'F'
+            push!(tokens, (:F, "F"))
+            i = nextind(s, i)
+        elseif ch == 'G'
+            push!(tokens, (:G, "G"))
+            i = nextind(s, i)
+        elseif ch == '<'
+            j = nextind(s, i)
+            if j <= lastindex(s) && s[j] == '-'
+                j2 = nextind(s, j)
+                if j2 <= lastindex(s) && s[j2] == '>'
+                    push!(tokens, (:IFF, "<->"))
+                    i = nextind(s, j2)
+                else
+                    throw(ArgumentError("Could not tokenize LTL formula string: $(formula_str)"))
+                end
+            else
+                throw(ArgumentError("Could not tokenize LTL formula string: $(formula_str)"))
+            end
+        elseif ch == '-'
+            j = nextind(s, i)
+            if j <= lastindex(s) && s[j] == '>'
+                push!(tokens, (:IMPLIES, "->"))
+                i = nextind(s, j)
+            else
+                throw(ArgumentError("Could not tokenize LTL formula string: $(formula_str)"))
+            end
+        elseif isletter(ch)
+            start = i
+            i = nextind(s, i)
+            while i <= lastindex(s) && ((isletter(s[i]) || isdigit(s[i])) || s[i] == '_')
+                i = nextind(s, i)
+            end
+            word = s[start:prevind(s, i)]
+            if word == "true"
+                push!(tokens, (:TRUE, word))
+            elseif word == "false"
+                push!(tokens, (:FALSE, word))
+            else
+                push!(tokens, (:AP, word))
+            end
+        else
+            throw(ArgumentError("Could not tokenize LTL formula string: $(formula_str)"))
+        end
+    end
+
+    return tokens
+end
+
+function parse_ltl_formula_string(formula_str::AbstractString)::LTLFormula
+    tokens = tokenize_ltl_formula_string(formula_str)
+    pos = Ref(1)
+
+    peek() = pos[] <= length(tokens) ? tokens[pos[]] : nothing
+
+    function consume!(expected_type::Symbol)
+        tok = peek()
+        if isnothing(tok) || tok[1] != expected_type
+            throw(ArgumentError("Could not parse LTL formula string: $(formula_str)"))
+        end
+        pos[] += 1
+        return tok
+    end
+
+    function parse_primary()
+        tok = peek()
+        isnothing(tok) && throw(ArgumentError("Could not parse LTL formula string: $(formula_str)"))
+
+        if tok[1] == :AP
+            consume!(:AP)
+            return AP(tok[2])
+        elseif tok[1] == :TRUE
+            consume!(:TRUE)
+            return AP("true")
+        elseif tok[1] == :FALSE
+            consume!(:FALSE)
+            return AP("false")
+        elseif tok[1] == :LPAREN
+            consume!(:LPAREN)
+            expr = parse_iff()
+            consume!(:RPAREN)
+            return expr
+        else
+            throw(ArgumentError("Could not parse LTL formula string: $(formula_str)"))
+        end
+    end
+
+    function parse_unary()
+        tok = peek()
+        isnothing(tok) && throw(ArgumentError("Could not parse LTL formula string: $(formula_str)"))
+
+        if tok[1] == :NOT
+            consume!(:NOT)
+            return UnaryLTL(:!, parse_unary())
+        elseif tok[1] == :X
+            consume!(:X)
+            return UnaryLTL(:X, parse_unary())
+        elseif tok[1] == :F
+            consume!(:F)
+            return UnaryLTL(:F, parse_unary())
+        elseif tok[1] == :G
+            consume!(:G)
+            return UnaryLTL(:G, parse_unary())
+        else
+            return parse_primary()
+        end
+    end
+
+    function parse_temporal_binary()
+        left = parse_unary()
+        while true
+            tok = peek()
+            if isnothing(tok)
+                return left
+            elseif tok[1] == :U
+                consume!(:U)
+                left = BinaryLTL(:U, left, parse_unary())
+            elseif tok[1] == :W
+                consume!(:W)
+                left = BinaryLTL(:W, left, parse_unary())
+            elseif tok[1] == :R
+                consume!(:R)
+                left = BinaryLTL(:R, left, parse_unary())
+            elseif tok[1] == :M
+                consume!(:M)
+                left = BinaryLTL(:M, left, parse_unary())
+            else
+                return left
+            end
+        end
+    end
+
+    function parse_and()
+        left = parse_temporal_binary()
+        while true
+            tok = peek()
+            if !isnothing(tok) && tok[1] == :AND
+                consume!(:AND)
+                left = BinaryLTL(:&, left, parse_temporal_binary())
+            else
+                return left
+            end
+        end
+    end
+
+    function parse_or()
+        left = parse_and()
+        while true
+            tok = peek()
+            if !isnothing(tok) && tok[1] == :OR
+                consume!(:OR)
+                left = BinaryLTL(:|, left, parse_and())
+            else
+                return left
+            end
+        end
+    end
+
+    function parse_implies()
+        left = parse_or()
+        tok = peek()
+        if !isnothing(tok) && tok[1] == :IMPLIES
+            consume!(:IMPLIES)
+            return BinaryLTL(:->, left, parse_implies())
+        end
+        return left
+    end
+
+    function parse_iff()
+        left = parse_implies()
+        tok = peek()
+        if !isnothing(tok) && tok[1] == :IFF
+            consume!(:IFF)
+            return BinaryLTL(Symbol("<->"), left, parse_iff())
+        end
+        return left
+    end
+
+    result = parse_iff()
+    if pos[] <= length(tokens)
+        throw(ArgumentError("Could not parse LTL formula string: $(formula_str)"))
+    end
+    return result
+end
+
+function contains_unsupported_saved_operator(formula_str::AbstractString)
+    s = String(formula_str)
+    return occursin(r"(^|\\s)R(\\s|$)", s) || occursin(r"(^|\\s)W(\\s|$)", s) || occursin(r"(^|\\s)M(\\s|$)", s)
+end
+
+function choose_readable_saved_formula_string(formula::LTLFormula)
+    original_formula = formula_to_string(formula)
+    local_simplified_formula = formula_to_string(simplify_formula_local(formula))
+    spot_simplified_formula = String(simplify_formula_spot_level(formula; level=3, full_parentheses=true))
+
+    candidates = String[]
+    push!(candidates, original_formula)
+    push!(candidates, local_simplified_formula)
+    push!(candidates, spot_simplified_formula)
+
+    # remove duplicates while preserving order
+    unique_candidates = String[]
+    for candidate in candidates
+        if !(candidate in unique_candidates)
+            push!(unique_candidates, candidate)
+        end
+    end
+
+    # prefer formulas without unsupported operators
+    supported_candidates = [c for c in unique_candidates if !contains_unsupported_saved_operator(c)]
+    pool = isempty(supported_candidates) ? unique_candidates : supported_candidates
+
+    # choose the shortest readable representation
+    chosen = pool[1]
+    for candidate in pool[2:end]
+        if length(candidate) < length(chosen)
+            chosen = candidate
+        end
+    end
+
+    return normalize_prop_names_in_string(chosen)
+end
+
+function final_selected_formula_string(formula::LTLFormula)
+    return choose_readable_saved_formula_string(formula)
+end
+
+function final_selected_formula_ast(formula::LTLFormula)
+    return parse_ltl_formula_string(final_selected_formula_string(formula))
+end
+
+function count_atomic_props(formula::LTLFormula, seen::Set{String}=Set{String}())
+    if formula isa AP
+        formula.name in ("true", "false") || push!(seen, formula.name)
+    elseif formula isa UnaryLTL
+        count_atomic_props(formula.child, seen)
+    elseif formula isa BinaryLTL
+        count_atomic_props(formula.left, seen)
+        count_atomic_props(formula.right, seen)
+    end
+    return seen
 end
