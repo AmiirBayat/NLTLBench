@@ -9948,5 +9948,481 @@
             "persistence"
         ],
         "back_translation": "(eventually, (always, (prop_1 is true))) and ((prop_1 is true) or (prop_2 is true))"
+    },
+    {
+        "id": 501,
+        "LTL": "F((prop_1 & F(prop_2)))",
+        "generated_formula": "F(prop_1 & F(prop_2))",
+        "simplified_formula": "F((prop_1 & F(prop_2)))",
+        "ast_size": 5,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "&": 1,
+            "F": 2
+        },
+        "temporal_behavior": [
+            "liveness"
+        ],
+        "back_translation": "eventually, ((prop_1 is true) and (eventually, (prop_2 is true)))"
+    },
+    {
+        "id": 502,
+        "LTL": "F((prop_1 & F((prop_2 & F(prop_3)))))",
+        "generated_formula": "F(prop_1 & F(prop_2 & F(prop_3)))",
+        "simplified_formula": "F((prop_1 & F((prop_2 & F(prop_3)))))",
+        "ast_size": 8,
+        "ast_depth": 5,
+        "temporal_depth": 3,
+        "num_atomic_props": 3,
+        "operator_counts": {
+            "&": 2,
+            "F": 3
+        },
+        "temporal_behavior": [
+            "liveness"
+        ],
+        "back_translation": "eventually, ((prop_1 is true) and (eventually, ((prop_2 is true) and (eventually, (prop_3 is true)))))"
+    },
+    {
+        "id": 503,
+        "LTL": "F((prop_1 & F((prop_2 & F((prop_3 & F(prop_4)))))))",
+        "generated_formula": "F(prop_1 & F(prop_2 & F(prop_3 & F(prop_4))))",
+        "simplified_formula": "F((prop_1 & F((prop_2 & F((prop_3 & F(prop_4)))))))",
+        "ast_size": 11,
+        "ast_depth": 7,
+        "temporal_depth": 4,
+        "num_atomic_props": 4,
+        "operator_counts": {
+            "&": 3,
+            "F": 4
+        },
+        "temporal_behavior": [
+            "liveness"
+        ],
+        "back_translation": "eventually, ((prop_1 is true) and (eventually, ((prop_2 is true) and (eventually, ((prop_3 is true) and (eventually, (prop_4 is true)))))))"
+    },
+    {
+        "id": 504,
+        "LTL": "G((prop_1 -> F(prop_2)))",
+        "generated_formula": "G(prop_1 -> F prop_2)",
+        "simplified_formula": "G((prop_1 -> F(prop_2)))",
+        "ast_size": 5,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "->": 1,
+            "F": 1,
+            "G": 1
+        },
+        "temporal_behavior": [
+            "conditional"
+        ],
+        "back_translation": "always, (if (prop_1 is true), then (eventually, (prop_2 is true)))"
+    },
+    {
+        "id": 505,
+        "LTL": "G((prop_1 -> X(X(X(prop_2)))))",
+        "generated_formula": "G(prop_1 -> X (X (X prop_2)))",
+        "simplified_formula": "G((prop_1 -> X(X(X(prop_2)))))",
+        "ast_size": 7,
+        "ast_depth": 5,
+        "temporal_depth": 4,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "->": 1,
+            "G": 1,
+            "X": 3
+        },
+        "temporal_behavior": [
+            "safety",
+            "next_step",
+            "conditional"
+        ],
+        "back_translation": "always, (if (prop_1 is true), then (in the next step, (in the next step, (in the next step, (prop_2 is true)))))"
+    },
+    {
+        "id": 506,
+        "LTL": "(prop_1) R (!(prop_2))",
+        "generated_formula": "(F prop_2) -> (!prop_2 U (prop_1 & !prop_2))",
+        "simplified_formula": "(F(prop_2) -> (!(prop_2) U (prop_1 & !(prop_2))))",
+        "ast_size": 4,
+        "ast_depth": 2,
+        "temporal_depth": 1,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "!": 1,
+            "R": 1
+        },
+        "temporal_behavior": [
+            "release"
+        ],
+        "back_translation": "(prop_2 is false) must hold until (prop_1 is true) holds, and if it never does, then (prop_2 is false) must keep holding forever"
+    },
+    {
+        "id": 507,
+        "LTL": "(G(prop_1) & G((prop_2 -> !(prop_3))))",
+        "generated_formula": "G prop_1 & G(prop_2 -> !prop_3)",
+        "simplified_formula": "(G(prop_1) & G((prop_2 -> !(prop_3))))",
+        "ast_size": 8,
+        "ast_depth": 4,
+        "temporal_depth": 1,
+        "num_atomic_props": 3,
+        "operator_counts": {
+            "!": 1,
+            "&": 1,
+            "->": 1,
+            "G": 2
+        },
+        "temporal_behavior": [
+            "safety",
+            "conditional"
+        ],
+        "back_translation": "(always, (prop_1 is true)) and (always, (if (prop_2 is true), then (prop_3 is false)))"
+    },
+    {
+        "id": 508,
+        "LTL": "(G((prop_1 -> F(prop_2))) -> G(F(prop_3)))",
+        "generated_formula": "G(prop_1 -> F prop_2) -> G F prop_3",
+        "simplified_formula": "(G((prop_1 -> F(prop_2))) -> G(F(prop_3)))",
+        "ast_size": 9,
+        "ast_depth": 4,
+        "temporal_depth": 2,
+        "num_atomic_props": 3,
+        "operator_counts": {
+            "->": 2,
+            "F": 2,
+            "G": 2
+        },
+        "temporal_behavior": [
+            "recurrence",
+            "conditional"
+        ],
+        "back_translation": "if (always, (if (prop_1 is true), then (eventually, (prop_2 is true)))), then (always, (eventually, (prop_3 is true)))"
+    },
+    {
+        "id": 509,
+        "LTL": "(G(F(prop_1)) -> G(F(prop_2)))",
+        "generated_formula": "G F prop_1 -> G F prop_2",
+        "simplified_formula": "(G(F(prop_1)) -> G(F(prop_2)))",
+        "ast_size": 7,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "->": 1,
+            "F": 2,
+            "G": 2
+        },
+        "temporal_behavior": [
+            "recurrence",
+            "conditional"
+        ],
+        "back_translation": "if (always, (eventually, (prop_1 is true))), then (always, (eventually, (prop_2 is true)))"
+    },
+    {
+        "id": 510,
+        "LTL": "G((!((prop_1 & prop_2)) -> F(prop_3)))",
+        "generated_formula": "G (!(prop_1 & prop_2) -> F prop_3)",
+        "simplified_formula": "G((!((prop_1 & prop_2)) -> F(prop_3)))",
+        "ast_size": 8,
+        "ast_depth": 4,
+        "temporal_depth": 2,
+        "num_atomic_props": 3,
+        "operator_counts": {
+            "!": 1,
+            "&": 1,
+            "->": 1,
+            "F": 1,
+            "G": 1
+        },
+        "temporal_behavior": [
+            "conditional"
+        ],
+        "back_translation": "always, (if (it is not the case that ((prop_1 is true) and (prop_2 is true))), then (eventually, (prop_3 is true)))"
+    },
+    {
+        "id": 511,
+        "LTL": "G(((prop_1 <-> prop_2) -> (prop_3 <-> prop_4)))",
+        "generated_formula": "G ((prop_1 <-> prop_2) -> (prop_3 <-> prop_4))",
+        "simplified_formula": "G(((prop_1 <-> prop_2) -> (prop_3 <-> prop_4)))",
+        "ast_size": 8,
+        "ast_depth": 3,
+        "temporal_depth": 1,
+        "num_atomic_props": 4,
+        "operator_counts": {
+            "->": 1,
+            "<->": 2,
+            "G": 1
+        },
+        "temporal_behavior": [
+            "safety",
+            "conditional"
+        ],
+        "back_translation": "always, (if ((prop_1 is true) if and only if (prop_2 is true)), then ((prop_3 is true) if and only if (prop_4 is true)))"
+    },
+    {
+        "id": 512,
+        "LTL": "G((prop_1 -> X(G(!(prop_2)))))",
+        "generated_formula": "G (prop_1 -> X G ! prop_2)",
+        "simplified_formula": "G((prop_1 -> X(G(!(prop_2)))))",
+        "ast_size": 7,
+        "ast_depth": 5,
+        "temporal_depth": 3,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "!": 1,
+            "->": 1,
+            "G": 2,
+            "X": 1
+        },
+        "temporal_behavior": [
+            "safety",
+            "next_step",
+            "conditional"
+        ],
+        "back_translation": "always, (if (prop_1 is true), then (in the next step, (always, (prop_2 is false))))"
+    },
+    {
+        "id": 513,
+        "LTL": "(!(prop_1)) R (prop_2)",
+        "generated_formula": "(prop_2 U (prop_2 & ! prop_1)) | G prop_2",
+        "simplified_formula": "(G(prop_2) | (prop_2 U (prop_2 & !(prop_1))))",
+        "ast_size": 4,
+        "ast_depth": 2,
+        "temporal_depth": 1,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "!": 1,
+            "R": 1
+        },
+        "temporal_behavior": [
+            "release"
+        ],
+        "back_translation": "(prop_2 is true) must hold until (prop_1 is false) holds, and if it never does, then (prop_2 is true) must keep holding forever"
+    },
+    {
+        "id": 514,
+        "LTL": "(prop_1) & (G((!(prop_1)) | (X((!(prop_1)) & (X((!(prop_1)) & (X((!(prop_1)) & (X((!(prop_1)) & (X(prop_1))))))))))))",
+        "generated_formula": "prop_1 & G (prop_1 -> X ! prop_1 & X X ! prop_1 & X X X ! prop_1 & X X X X ! prop_1 & X X X X X prop_1)",
+        "simplified_formula": "(prop_1 & G((prop_1 -> (X(X(X(X(X(prop_1))))) & (X(X(X(X(!(prop_1))))) & (X(X(X(!(prop_1)))) & (X(!(prop_1)) & X(X(!(prop_1))))))))))",
+        "ast_size": 24,
+        "ast_depth": 12,
+        "temporal_depth": 6,
+        "num_atomic_props": 1,
+        "operator_counts": {
+            "!": 5,
+            "&": 5,
+            "G": 1,
+            "X": 5,
+            "|": 1
+        },
+        "temporal_behavior": [
+            "safety",
+            "next_step"
+        ],
+        "back_translation": "(prop_1 is true) and (always, ((prop_1 is false) or (in the next step, ((prop_1 is false) and (in the next step, ((prop_1 is false) and (in the next step, ((prop_1 is false) and (in the next step, ((prop_1 is false) and (in the next step, (prop_1 is true))))))))))))"
+    },
+    {
+        "id": 515,
+        "LTL": "(G(F(prop_1)) | X(prop_2))",
+        "generated_formula": "G F prop_1 | X prop_2",
+        "simplified_formula": "(X(prop_2) | G(F(prop_1)))",
+        "ast_size": 6,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "F": 1,
+            "G": 1,
+            "X": 1,
+            "|": 1
+        },
+        "temporal_behavior": [
+            "recurrence",
+            "next_step"
+        ],
+        "back_translation": "(always, (eventually, (prop_1 is true))) or (in the next step, (prop_2 is true))"
+    },
+    {
+        "id": 516,
+        "LTL": "G((prop_1 -> (prop_2 | X(prop_2))))",
+        "generated_formula": "G (prop_1 -> (prop_2 | X prop_2))",
+        "simplified_formula": "G((prop_1 -> (prop_2 | X(prop_2))))",
+        "ast_size": 7,
+        "ast_depth": 4,
+        "temporal_depth": 2,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "->": 1,
+            "G": 1,
+            "X": 1,
+            "|": 1
+        },
+        "temporal_behavior": [
+            "safety",
+            "next_step",
+            "conditional"
+        ],
+        "back_translation": "always, (if (prop_1 is true), then ((prop_2 is true) or (in the next step, (prop_2 is true))))"
+    },
+    {
+        "id": 517,
+        "LTL": "G(((prop_1 | prop_2) | prop_3))",
+        "generated_formula": "G (prop_1 | prop_2 | prop_3)",
+        "simplified_formula": "G((prop_3 | (prop_1 | prop_2)))",
+        "ast_size": 6,
+        "ast_depth": 3,
+        "temporal_depth": 1,
+        "num_atomic_props": 3,
+        "operator_counts": {
+            "G": 1,
+            "|": 2
+        },
+        "temporal_behavior": [
+            "safety"
+        ],
+        "back_translation": "always, (((prop_1 is true) or (prop_2 is true)) or (prop_3 is true))"
+    },
+    {
+        "id": 518,
+        "LTL": "F((prop_1) & (X(prop_1)))",
+        "generated_formula": "! G (! (prop_1 & X prop_1))",
+        "simplified_formula": "!(G(!((prop_1 & X(prop_1)))))",
+        "ast_size": 5,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 1,
+        "operator_counts": {
+            "&": 1,
+            "F": 1,
+            "X": 1
+        },
+        "temporal_behavior": [
+            "liveness",
+            "next_step"
+        ],
+        "back_translation": "eventually, ((prop_1 is true) and (in the next step, (prop_1 is true)))"
+    },
+    {
+        "id": 519,
+        "LTL": "G((!(prop_1)) | (X((!(prop_1)) | (X((!(prop_1)) | (X(!(prop_1))))))))",
+        "generated_formula": "G ( prop_1 -> (X !prop_1 | XX !prop_1 | XXX !prop_1))",
+        "simplified_formula": "G((prop_1 -> (X(X(X(!(prop_1)))) | (X(!(prop_1)) | X(X(!(prop_1)))))))",
+        "ast_size": 15,
+        "ast_depth": 8,
+        "temporal_depth": 4,
+        "num_atomic_props": 1,
+        "operator_counts": {
+            "!": 4,
+            "G": 1,
+            "X": 3,
+            "|": 3
+        },
+        "temporal_behavior": [
+            "safety",
+            "next_step"
+        ],
+        "back_translation": "always, ((prop_1 is false) or (in the next step, ((prop_1 is false) or (in the next step, ((prop_1 is false) or (in the next step, (prop_1 is false)))))))"
+    },
+    {
+        "id": 520,
+        "LTL": "G((prop_1 -> X(prop_2)))",
+        "generated_formula": "G ( prop_1 -> X prop_2)",
+        "simplified_formula": "G((prop_1 -> X(prop_2)))",
+        "ast_size": 5,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "->": 1,
+            "G": 1,
+            "X": 1
+        },
+        "temporal_behavior": [
+            "safety",
+            "next_step",
+            "conditional"
+        ],
+        "back_translation": "always, (if (prop_1 is true), then (in the next step, (prop_2 is true)))"
+    },
+    {
+        "id": 521,
+        "LTL": "(F(prop_1) & F(prop_2))",
+        "generated_formula": "F prop_1 & F prop_2",
+        "simplified_formula": "(F(prop_1) & F(prop_2))",
+        "ast_size": 5,
+        "ast_depth": 2,
+        "temporal_depth": 1,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "&": 1,
+            "F": 2
+        },
+        "temporal_behavior": [
+            "liveness"
+        ],
+        "back_translation": "(eventually, (prop_1 is true)) and (eventually, (prop_2 is true))"
+    },
+    {
+        "id": 522,
+        "LTL": "G((prop_1 <-> X(prop_2)))",
+        "generated_formula": "G (prop_1 <-> X prop_2)",
+        "simplified_formula": "G((prop_1 <-> X(prop_2)))",
+        "ast_size": 5,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "<->": 1,
+            "G": 1,
+            "X": 1
+        },
+        "temporal_behavior": [
+            "safety",
+            "next_step",
+            "conditional"
+        ],
+        "back_translation": "always, ((prop_1 is true) if and only if (in the next step, (prop_2 is true)))"
+    },
+    {
+        "id": 523,
+        "LTL": "(!(prop_1)) | (X((prop_2) W (prop_3)))",
+        "generated_formula": "prop_2 -> X ((prop_3 U prop_1) | G prop_3)",
+        "simplified_formula": "(prop_2 -> X((G(prop_3) | (prop_3 U prop_1))))",
+        "ast_size": 7,
+        "ast_depth": 3,
+        "temporal_depth": 2,
+        "num_atomic_props": 3,
+        "operator_counts": {
+            "!": 1,
+            "W": 1,
+            "X": 1,
+            "|": 1
+        },
+        "temporal_behavior": [
+            "weak_until",
+            "next_step"
+        ],
+        "back_translation": "(prop_1 is false) or (in the next step, ((prop_2 is true) holds until (prop_3 is true) holds, or else (prop_2 is true) keeps holding forever))"
+    },
+    {
+        "id": 524,
+        "LTL": "(prop_1) W (prop_2)",
+        "generated_formula": "(prop_1 U prop_2) | G prop_1",
+        "simplified_formula": "(G(prop_1) | (prop_1 U prop_2))",
+        "ast_size": 3,
+        "ast_depth": 1,
+        "temporal_depth": 1,
+        "num_atomic_props": 2,
+        "operator_counts": {
+            "W": 1
+        },
+        "temporal_behavior": [
+            "weak_until"
+        ],
+        "back_translation": "(prop_1 is true) holds until (prop_2 is true) holds, or else (prop_1 is true) keeps holding forever"
     }
 ]
