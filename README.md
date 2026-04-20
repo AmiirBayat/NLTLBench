@@ -1,6 +1,6 @@
 # NL2LTLBench
 
-We aim to synthesize pairs of **Linear Temporal Logic (LTL) formulas** and their corresponding **natural language (NL) descriptions** to construct a scalable and controllable benchmark.
+We synthesize pairs of **LTL formulas** and their corresponding **natural language descriptions** to construct a benchmark.
 
 ---
 
@@ -14,7 +14,7 @@ We aim to synthesize pairs of **Linear Temporal Logic (LTL) formulas** and their
 
 **Output:**  
 - A set of **unique, satisfiable LTL formulas** with correct syntax  
-- Their corresponding **natural language descriptions** obtained via backtranslation  
+- Their corresponding **natural language descriptions** obtained via back-translation  
 
 ---
 
@@ -27,7 +27,7 @@ We aim to synthesize pairs of **Linear Temporal Logic (LTL) formulas** and their
 
 2. **Formula generation (AST-based)**  
    Generate candidate LTL formulas by constructing **Abstract Syntax Trees (ASTs)** using elements from `AP_1` and `TO_1`.  
-   - Ensure **syntactic correctness** by construction  
+   - Ensure **syntactic correctness** 
    - Control:
      - maximum formula size (AST size)
      - temporal nesting depth  
@@ -55,7 +55,7 @@ We aim to synthesize pairs of **Linear Temporal Logic (LTL) formulas** and their
    - temporal depth
    - operator statistics  
 
-5. **Backtranslation to natural language**  
+5. **Back-translation to natural language**  
    Generate a canonical natural language description for each formula using a **rule-based translation** applied to the AST structure.
 
 ---
