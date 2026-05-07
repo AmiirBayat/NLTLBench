@@ -1,5 +1,3 @@
-
-
 include("GenerateLTL.jl")
 include("Filter.jl")
 
@@ -9,25 +7,18 @@ using OrderedCollections
 const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "ltl_dataset.json")
 const DEFAULT_OUTPUT_FIELD = "back_translation"
 
-"""
-    load_dataset(dataset_path=DEFAULT_DATASET_PATH)
-
-Load the dataset JSON file and return it as a Julia vector of records.
-"""
 function load_dataset(dataset_path::String = DEFAULT_DATASET_PATH)
     if !isfile(dataset_path)
         throw(ArgumentError("Dataset file not found: $(dataset_path)"))
     end
 
-    data = JSON3.read(read(dataset_path, String))
-    return collect(data)
+    content = strip(read(dataset_path, String))
+    isempty(content) && throw(ArgumentError("Dataset file is empty: $(dataset_path)"))
+
+    parsed = JSON3.read(content)
+    return [OrderedDict{String,Any}(String(k) => v for (k, v) in pairs(record)) for record in parsed]
 end
 
-"""
-    save_dataset(records, dataset_path=DEFAULT_DATASET_PATH)
-
-Write the updated dataset back to disk with pretty JSON formatting.
-"""
 function save_dataset(records, dataset_path::String = DEFAULT_DATASET_PATH)
     open(dataset_path, "w") do io
         JSON3.pretty(io, records)
@@ -35,21 +26,10 @@ function save_dataset(records, dataset_path::String = DEFAULT_DATASET_PATH)
     end
 end
 
-"""
-    ap_to_nl(name)
-
-Translate an atomic proposition name into a readable phrase.
-"""
 function ap_to_nl(name::AbstractString)
     return "$(name) is true"
 end
 
-"""
-    formula_to_nl(formula)
-
-Translate an LTL formula AST into a deterministic natural-language description.
-This is a rule-based, algorithmic back-translation intended for dataset construction.
-"""
 function formula_to_nl(formula::AP)::String
     if formula.name == "true"
         return "true"
@@ -105,53 +85,51 @@ function formula_to_nl(formula::BinaryLTL)::String
     end
 end
 
-"""
-    ltl_string_to_nl(formula_str)
-
-Parse an LTL formula string and translate it to natural language.
-"""
 function ltl_string_to_nl(formula_str::AbstractString)
-    ast = parse_ltl_formula_string(String(formula_str))
+    normalized = strip(String(formula_str))
+    normalized == "1" && (normalized = "true")
+    normalized == "0" && (normalized = "false")
+    isempty(normalized) && throw(ArgumentError("Empty LTL formula string."))
+    ast = parse_ltl_formula_string(normalized)
     return formula_to_nl(ast)
 end
 
-"""
-    update_dataset_with_backtranslations(dataset_path=DEFAULT_DATASET_PATH; output_field=DEFAULT_OUTPUT_FIELD, overwrite=true)
-
-For each dataset entry, translate the saved `LTL` formula to natural language and store it
-under `output_field`. The dataset is then written back in place.
-"""
 function update_dataset_with_backtranslations(
     dataset_path::String = DEFAULT_DATASET_PATH;
     output_field::String = DEFAULT_OUTPUT_FIELD,
-    overwrite::Bool = true,
+    overwrite::Bool = false,
 )
     records = load_dataset(dataset_path)
-    updated_records = OrderedDict[]
     updated_count = 0
+    skipped_count = 0
+    error_count = 0
 
     for record in records
-        dict_record = OrderedDict{String,Any}()
-        for (k, v) in pairs(record)
-            dict_record[String(k)] = v
-        end
+        haskey(record, "LTL") || continue
 
-        if !haskey(dict_record, "LTL")
-            push!(updated_records, dict_record)
+        already_has_output = haskey(record, output_field) && !isempty(strip(String(record[output_field])))
+        if !overwrite && already_has_output
+            skipped_count += 1
             continue
         end
 
-        if overwrite || !haskey(dict_record, output_field)
-            dict_record[output_field] = ltl_string_to_nl(String(dict_record["LTL"]))
+        ltl_value = strip(String(record["LTL"]))
+        try
+            record[output_field] = ltl_string_to_nl(ltl_value)
             updated_count += 1
+        catch err
+            error_count += 1
+            record_id = haskey(record, "id") ? string(record["id"]) : "unknown"
+            println("Skipping back-translation for record id ", record_id, " because its LTL could not be parsed: ", ltl_value)
+            println("  Error: ", sprint(showerror, err))
         end
-
-        push!(updated_records, dict_record)
     end
 
-    save_dataset(updated_records, dataset_path)
+    save_dataset(records, dataset_path)
 
     println("Updated $(updated_count) dataset entries with algorithmic back-translations.")
+    println("Skipped $(skipped_count) existing entries.")
+    println("Encountered $(error_count) errors.")
     println("Dataset path: $(dataset_path)")
 end
 
@@ -160,8 +138,8 @@ function preview_backtranslations(dataset_path::String = DEFAULT_DATASET_PATH; n
     shown = 0
 
     for record in records
-        ltl = haskey(record, :LTL) ? String(record[:LTL]) : (haskey(record, "LTL") ? String(record["LTL"]) : nothing)
-        isnothing(ltl) && continue
+        haskey(record, "LTL") || continue
+        ltl = String(record["LTL"])
 
         println("LTL: ", ltl)
         println("NL : ", ltl_string_to_nl(ltl))
@@ -173,11 +151,11 @@ function preview_backtranslations(dataset_path::String = DEFAULT_DATASET_PATH; n
 end
 
 function main()
-    update_dataset_with_backtranslations()
+    println("Loaded BackTranslation.jl")
+    println("Run `preview_backtranslations()` to inspect translations for dataset/ltl_dataset.json.")
+    println("Run `update_dataset_with_backtranslations(overwrite=false)` to write them into dataset/ltl_dataset.json.")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
     main()
-else
-    println("Loaded BackTranslation.jl. Run `preview_backtranslations()` to inspect translations or `update_dataset_with_backtranslations()` to write them into the dataset.")
 end

@@ -5,7 +5,7 @@ using JSON3
 using OrderedCollections
 using Plots
 
-const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL.json")
+const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 const DEFAULT_FIELDS = ["LTL", "simplified_formula"]
 const DEFAULT_SIZE_HISTOGRAM_PATH = joinpath(@__DIR__, "dataset", "formula_size_histogram.png")
 
@@ -34,8 +34,8 @@ function empty_operator_counter()
     )
 end
 
-function empty_histogram()
-    return OrderedDict{Int,Int}()
+function empty_atomic_proposition_counter()
+    return OrderedDict{String,Int}()
 end
 
 function count_formula_operators(formula_str::AbstractString)
@@ -52,6 +52,28 @@ function count_formula_operators(formula_str::AbstractString)
         end
     end
 
+    return counts
+end
+
+function count_atomic_propositions(formula_str::AbstractString)
+    ast = parse_ltl_formula_string(String(formula_str))
+    counts = empty_atomic_proposition_counter()
+
+    function visit(node)
+        if node isa AP
+            name = String(node.name)
+            if startswith(name, "prop_")
+                counts[name] = get(counts, name, 0) + 1
+            end
+        elseif node isa UnaryLTL
+            visit(node.child)
+        elseif node isa BinaryLTL
+            visit(node.left)
+            visit(node.right)
+        end
+    end
+
+    visit(ast)
     return counts
 end
 
@@ -88,12 +110,17 @@ end
 
 function field_statistics(records, field::String)
     total_counts = empty_operator_counter()
+    atomic_prop_counts = empty_atomic_proposition_counter()
     present_count = 0
     parse_failures = 0
 
     ast_size_hist = empty_histogram()
     ast_depth_hist = empty_histogram()
     temporal_depth_hist = empty_histogram()
+
+    ast_size_values = Int[]
+    ast_depth_values = Int[]
+    temporal_depth_values = Int[]
 
     for record in records
         if !(haskey(record, field) || haskey(record, Symbol(field)))
@@ -108,24 +135,42 @@ function field_statistics(records, field::String)
 
         try
             merge_counts!(total_counts, count_formula_operators(formula_str))
+            merge_counts!(atomic_prop_counts, count_atomic_propositions(formula_str))
             structure_stats = formula_structure_statistics(formula_str)
             increment_histogram!(ast_size_hist, structure_stats["ast_size"])
             increment_histogram!(ast_depth_hist, structure_stats["ast_depth"])
             increment_histogram!(temporal_depth_hist, structure_stats["temporal_depth"])
+            push!(ast_size_values, structure_stats["ast_size"])
+            push!(ast_depth_values, structure_stats["ast_depth"])
+            push!(temporal_depth_values, structure_stats["temporal_depth"])
         catch err
             parse_failures += 1
             println("Warning: failed to parse field `$(field)` for record ID $(get(record, "id", "?")): ", err)
         end
     end
 
+    ast_size_min = isempty(ast_size_values) ? nothing : minimum(ast_size_values)
+    ast_size_max = isempty(ast_size_values) ? nothing : maximum(ast_size_values)
+    ast_depth_min = isempty(ast_depth_values) ? nothing : minimum(ast_depth_values)
+    ast_depth_max = isempty(ast_depth_values) ? nothing : maximum(ast_depth_values)
+    temporal_depth_min = isempty(temporal_depth_values) ? nothing : minimum(temporal_depth_values)
+    temporal_depth_max = isempty(temporal_depth_values) ? nothing : maximum(temporal_depth_values)
+
     return OrderedDict(
         "field" => field,
         "records_with_field" => present_count,
         "parse_failures" => parse_failures,
         "operator_counts" => total_counts,
+        "atomic_proposition_counts" => atomic_prop_counts,
         "ast_size_distribution" => ast_size_hist,
+        "ast_size_min" => ast_size_min,
+        "ast_size_max" => ast_size_max,
         "ast_depth_distribution" => ast_depth_hist,
+        "ast_depth_min" => ast_depth_min,
+        "ast_depth_max" => ast_depth_max,
         "temporal_depth_distribution" => temporal_depth_hist,
+        "temporal_depth_min" => temporal_depth_min,
+        "temporal_depth_max" => temporal_depth_max,
     )
 end
 
@@ -133,6 +178,20 @@ function print_field_statistics(stats::OrderedDict{String,Any})
     println("Field: ", stats["field"])
     println("  Records with field: ", stats["records_with_field"])
     println("  Parse failures: ", stats["parse_failures"])
+
+    ast_size_min = stats["ast_size_min"]
+    ast_size_max = stats["ast_size_max"]
+    ast_depth_min = stats["ast_depth_min"]
+    ast_depth_max = stats["ast_depth_max"]
+    temporal_depth_min = stats["temporal_depth_min"]
+    temporal_depth_max = stats["temporal_depth_max"]
+
+    println("  AST size range: ", isnothing(ast_size_min) ? "n/a" : string(ast_size_min), " to ", isnothing(ast_size_max) ? "n/a" : string(ast_size_max))
+    println("  AST depth range: ", isnothing(ast_depth_min) ? "n/a" : string(ast_depth_min), " to ", isnothing(ast_depth_max) ? "n/a" : string(ast_depth_max))
+    println("  Temporal depth range: ", isnothing(temporal_depth_min) ? "n/a" : string(temporal_depth_min), " to ", isnothing(temporal_depth_max) ? "n/a" : string(temporal_depth_max))
+    println("  Maximum nesting level: ", isnothing(ast_depth_max) ? "n/a" : string(ast_depth_max))
+    println("  Maximum temporal nesting level: ", isnothing(temporal_depth_max) ? "n/a" : string(temporal_depth_max))
+
     println("  Operator counts:")
 
     counts = stats["operator_counts"]
@@ -158,9 +217,26 @@ function print_field_statistics(stats::OrderedDict{String,Any})
     end
 
     println()
-    println("  AST size distribution saved in histogram figure.")
-    println("  AST depth distribution available in returned statistics object.")
-    println("  Temporal depth distribution available in returned statistics object.")
+
+    println("  Atomic proposition counts:")
+    ap_counts = stats["atomic_proposition_counts"]
+
+    if isempty(ap_counts)
+        println("    (empty)")
+    else
+        sorted_ap_keys = sort(collect(keys(ap_counts)))
+        max_ap_count = maximum(values(ap_counts))
+        for ap in sorted_ap_keys
+            value = ap_counts[ap]
+            bar_len = max_ap_count == 0 ? 0 : max(1, round(Int, 40 * value / max_ap_count))
+            bar = repeat("█", bar_len)
+            println("    ", rpad(ap, 8), "| ", rpad(bar, 40), " ", value)
+        end
+    end
+
+    println()
+    println("  LTL AST size distribution is saved in the histogram figure when `LTL` statistics are available.")
+    println("  Returned statistics also include the full AST size, AST depth, and temporal depth histograms.")
     println()
 end
 
@@ -177,45 +253,45 @@ function plot_size_distributions(
     output_path::String = DEFAULT_SIZE_HISTOGRAM_PATH,
 )
     ltl_stats = nothing
-    simplified_stats = nothing
 
     for stats in stats_list
         if stats["field"] == "LTL"
             ltl_stats = stats
-        elseif stats["field"] == "simplified_formula"
-            simplified_stats = stats
+            break
         end
     end
 
-    if isnothing(ltl_stats) || isnothing(simplified_stats)
-        throw(ArgumentError("Both `LTL` and `simplified_formula` statistics are required to plot size distributions."))
+    if isnothing(ltl_stats)
+        throw(ArgumentError("`LTL` statistics are required to plot the size distribution."))
     end
 
     ltl_sizes = histogram_to_vectors(ltl_stats["ast_size_distribution"])
-    simplified_sizes = histogram_to_vectors(simplified_stats["ast_size_distribution"])
+    isempty(ltl_sizes) && throw(ArgumentError("No LTL sizes available for plotting."))
 
-    max_size = maximum(vcat(ltl_sizes, simplified_sizes))
+    max_size = maximum(ltl_sizes)
     bins = 0.5:1.0:(max_size + 0.5)
 
     p = histogram(
         ltl_sizes;
         bins=bins,
         normalize=false,
-        alpha=0.5,
-        label="LTL",
-        xlabel="Formula size (AST size)",
+        alpha=0.9,
+        label="LTL formulas",
+        xlabel="LTL formula size",
         ylabel="Count",
-        title="Formula Size Distribution: LTL vs Simplified Formula",
+        title="",
         legend=:topright,
-    )
-
-    histogram!(
-        p,
-        simplified_sizes;
-        bins=bins,
-        normalize=false,
-        alpha=0.5,
-        label="simplified_formula",
+        framestyle=:box,
+        grid=true,
+        size=(1100, 700),
+        left_margin=12Plots.mm,
+        right_margin=8Plots.mm,
+        bottom_margin=10Plots.mm,
+        top_margin=6Plots.mm,
+        guidefontsize=16,
+        tickfontsize=12,
+        legendfontsize=11,
+        linewidth=0.8,
     )
 
     savefig(p, output_path)

@@ -7082,11 +7082,11 @@
             "until",
             "conditional"
         ],
-        "back_translation": "(((prop_1 is true) if and only if ((prop_2 is true) holds until (prop_3 is true))) holds until (prop_2 is true)) or ((prop_1 is true) if and only if (prop_2 is true))",
-        "natural_paraphrase": "Either \\(((prop_1 \\leftrightarrow (prop_2 \\;U\\; prop_3)) \\;U\\; prop_2)\\) holds, or \\((prop_1 \\leftrightarrow prop_2)\\) holds.",
-        "paraphrase_gpt5.4-mini": "Either \\(((prop_1 \\leftrightarrow (prop_2 \\;U\\; prop_3)) \\;U\\; prop_2)\\) is true, or \\((prop_1 \\leftrightarrow prop_2)\\) is true.",
-        "paraphrase_gemini-2.5-flash": "Unless `((prop_1 <-> (prop_2 \\;U\\; prop_3)) \\;U\\; prop_2)` is true, `(prop_1 <-> prop_2)` must be true.",
-        "paraphrase_deepseek": "Either it is the case that \\(((prop_1 \\leftrightarrow (prop_2 \\;U\\; prop_3)) \\;U\\; prop_2)\\) is true, or the equivalence \\(prop_1 \\leftrightarrow prop_2\\) holds."
+        "back_translation": "prop_1 is equivalent to prop_2 until prop_3, and this holds until prop_2 becomes true, or prop_1 is equivalent to prop_2.",
+        "natural_paraphrase": "prop_1 is equivalent to prop_2 until prop_3, and this holds until prop_2 becomes true, or prop_1 is equivalent to prop_2.",
+        "paraphrase_gpt5.4-mini": "At least one of the following holds: the equivalence between prop_1 and “prop_2 until prop_3” persists until prop_2 becomes true, or prop_1 and prop_2 have the same truth value.",
+        "paraphrase_gemini-2.5-flash": "One of two situations must occur: either the condition that prop_1 coincides with prop_2 holding until prop_3 remains valid up to the point where prop_2 becomes true, or prop_1 is true exactly when prop_2 is true.",
+        "paraphrase_deepseek": "Either it is the case that the condition 'prop_1 holds if and only if prop_2 holds until prop_3' holds until prop_2 becomes true, or the equivalence between prop_1 and prop_2 holds."
     },
     {
         "id": 301,
@@ -8024,8 +8024,8 @@
             "until"
         ],
         "back_translation": "always, ((((prop_1 is true) holds until ((prop_2 is true) and (prop_3 is true))) or (prop_4 is true)) holds until (prop_5 is true))",
-        "natural_paraphrase": "At all times, \\(((prop_1\\) holds until \\((prop_2 \\text{ and } prop_3)\\)) or \\(prop_4)\\) holds until \\(prop_5\\) becomes true.",
-        "paraphrase_gpt5.4-mini": "Throughout, either \\(prop_1\\) remains true until \\((prop_2 \\text{ and } prop_3)\\) holds, or \\(prop_4\\) holds, and this continues until \\(prop_5\\) becomes true.",
+        "natural_paraphrase": "At all times, prop_1 holds until (prop_2 and prop_3) holds, or prop_4 holds until prop_5 becomes true.",
+        "paraphrase_gpt5.4-mini": "Throughout, either prop_1 remains true until (prop_2 and prop_3) holds, or prop_4 holds, and this continues until prop_5 becomes true.",
         "paraphrase_gemini-2.5-flash": "Perpetually, the following condition must be met: either (prop_1 is true without interruption until prop_2 and prop_3 are both true) or (prop_4 is true), and this entire state must be maintained until prop_5 is observed.",
         "paraphrase_deepseek": "It is always the case that either prop_1 continues until both prop_2 and prop_3 are true, or prop_4 persists, and this entire condition lasts until prop_5 holds."
     },
@@ -8911,8 +8911,8 @@
             "conditional"
         ],
         "back_translation": "in the next step, (((prop_1 is true) or ((prop_1 is true) if and only if (prop_2 is true))) if and only if (((prop_3 is true) and (prop_1 is true)) holds until (prop_4 is true)))",
-        "natural_paraphrase": "In the next step, \\((prop_1 \\text{ is true } \\lor (prop_1 \\text{ is true} \\leftrightarrow prop_2 \\text{ is true}))\\) holds if and only if \\(((prop_3 \\text{ is true} \\land prop_1 \\text{ is true}) \\, U \\, prop_4 \\text{ is true})\\).",
-        "paraphrase_gpt5.4-mini": "At the next step, \\((prop_1 \\text{ is true } \\lor (prop_1 \\text{ is true} \\leftrightarrow prop_2 \\text{ is true}))\\) is true exactly when \\(((prop_3 \\text{ is true} \\land prop_1 \\text{ is true}) \\, U \\, prop_4 \\text{ is true})\\) is true.",
+        "natural_paraphrase": "In the next step, prop_1 is true or (prop_1 is true if and only if prop_2 is true) holds if and only if ((prop_3 is true and prop_1 is true) holds until prop_4 is true).",
+        "paraphrase_gpt5.4-mini": "At the next step, (prop_1 is true or (prop_1 is true if and only if prop_2 is true)) is true exactly when ((prop_3 is true and prop_1 is true) holds until prop_4 is true) is true.",
         "paraphrase_gemini-2.5-flash": "For the next state to be one where prop_1 is true, or where neither prop_1 nor prop_2 is true, it is necessary and sufficient that prop_4 will eventually be true, with prop_3 and prop_1 holding continuously until that point.",
         "paraphrase_deepseek": "At the next moment, prop_1 being true or prop_1 and prop_2 having the same truth value is equivalent to prop_3 and prop_1 both holding until prop_4 becomes true."
     },

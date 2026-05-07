@@ -13,7 +13,7 @@ using Dates
 # Change only these values to evaluate a different model and save to a different JSON file.
 # =================================================================================================
 
-const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL.json")
+const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 
 #const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "Gemini.json")
 #const DEFAULT_PROVIDER = :gemini
@@ -25,12 +25,12 @@ const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL
 #const DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
 #const DEFAULT_MAX_TOKENS = 1024
 
-const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "Gemini.json")
+const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "DeepSeek.json")
 
-const DEFAULT_PROVIDER = :gemini
-const DEFAULT_MODEL = "gemini-3-flash-preview"
-const DEFAULT_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-const DEFAULT_API_KEY_ENV = "GEMINI_API_KEY"
+const DEFAULT_PROVIDER = :deepseek
+const DEFAULT_MODEL = "deepseek-v4-flash"
+const DEFAULT_API_URL = "https://api.deepseek.com/chat/completions"
+const DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
 const DEFAULT_INCLUDE_TEMPERATURE = false
 const DEFAULT_TEMPERATURE = 0.0
 const DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
@@ -251,6 +251,41 @@ function extract_anthropic_output_text(response_json)
     return strip(join(text_chunks, "\n"))
 end
 
+function extract_mistral_output_text(response_json)
+    choices = if haskey(response_json, :choices)
+        response_json[:choices]
+    elseif haskey(response_json, "choices")
+        response_json["choices"]
+    else
+        throw(ErrorException("Mistral response did not contain `choices`."))
+    end
+
+    isempty(choices) && throw(ErrorException("Mistral response contained no choices."))
+    first_choice = choices[1]
+    message = haskey(first_choice, :message) ? first_choice[:message] : first_choice["message"]
+    content = haskey(message, :content) ? message[:content] : message["content"]
+
+    if content isa AbstractString
+        return strip(String(content))
+    end
+
+    text_chunks = String[]
+    for part in content
+        if haskey(part, :text)
+            push!(text_chunks, String(part[:text]))
+        elseif haskey(part, "text")
+            push!(text_chunks, String(part["text"]))
+        elseif haskey(part, :content)
+            push!(text_chunks, String(part[:content]))
+        elseif haskey(part, "content")
+            push!(text_chunks, String(part["content"]))
+        end
+    end
+
+    isempty(text_chunks) && throw(ErrorException("Mistral response contained no text content."))
+    return strip(join(text_chunks, "\n"))
+end
+
 function normalize_formula_text(text::AbstractString)
     s = strip(String(text))
 
@@ -350,6 +385,30 @@ function request_translation(
         parsed = JSON3.read(String(response.body))
         return normalize_formula_text(extract_deepseek_output_text(parsed))
 
+    elseif provider == :mistral
+        body = Dict(
+            "model" => model,
+            "messages" => [
+                Dict("role" => "system", "content" => "You translate natural language statements into LTL while preserving exact meaning."),
+                Dict("role" => "user", "content" => prompt),
+            ],
+            "max_tokens" => max_tokens,
+        )
+        if include_temperature
+            body["temperature"] = temperature
+        end
+        headers = [
+            "Authorization" => "Bearer $(api_key)",
+            "Content-Type" => "application/json",
+            "Accept" => "application/json",
+        ]
+        response = HTTP.post(api_url, headers, JSON3.write(body))
+        response.status == 200 || throw(ErrorException(
+            "Mistral API request failed with status $(response.status): $(String(response.body))"
+        ))
+        parsed = JSON3.read(String(response.body))
+        return normalize_formula_text(extract_mistral_output_text(parsed))
+
     elseif provider == :anthropic
         body = Dict(
             "model" => model,
@@ -373,7 +432,7 @@ function request_translation(
         parsed = JSON3.read(String(response.body))
         return normalize_formula_text(extract_anthropic_output_text(parsed))
     else
-        throw(ArgumentError("Unsupported provider: $(provider). Use :openai, :gemini, :deepseek, or :anthropic."))
+        throw(ArgumentError("Unsupported provider: $(provider). Use :openai, :gemini, :deepseek, :anthropic, or :mistral."))
     end
 end
 

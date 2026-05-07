@@ -3,9 +3,8 @@ using OrderedCollections
 using HTTP
 using DotEnv
 
-const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL.json")
-const DEFAULT_OUTPUT_FIELD = "paraphrase"
-const DEFAULT_MODEL_FIELD = "paraphrase_model"
+const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
+const DEFAULT_OUTPUT_FIELD = "paraphrase_gpt5.4-mini"
 const DEFAULT_MODEL = "gpt-5.4-mini"
 const DEFAULT_API_URL = "https://api.openai.com/v1/responses"
 
@@ -130,28 +129,41 @@ function update_dataset_with_paraphrases(
     dataset_path::String = DEFAULT_DATASET_PATH;
     input_field::String = "natural_paraphrase",
     output_field::String = DEFAULT_OUTPUT_FIELD,
-    model_field::String = DEFAULT_MODEL_FIELD,
     overwrite::Bool = true,
     model::String = DEFAULT_MODEL,
+    min_id::Int = 525,
 )
     records = load_dataset(dataset_path)
     updated_count = 0
     skipped_count = 0
 
     for (i, record) in enumerate(records)
+        haskey(record, "id") || continue
+        record_id = try
+            Int(record["id"])
+        catch
+            continue
+        end
+        if record_id < min_id
+            continue
+        end
+
         haskey(record, input_field) || continue
 
-        if !overwrite && haskey(record, output_field)
+        already_has_output = haskey(record, output_field) && !isempty(strip(String(record[output_field])))
+        if !overwrite && already_has_output
             skipped_count += 1
             continue
         end
 
         source_text = String(record[input_field])
+        println("Processing record id ", record_id, "...")
         paraphrase = request_paraphrase(source_text; model=model)
 
         record[output_field] = paraphrase
-        record[model_field] = model
         updated_count += 1
+        save_dataset(records, dataset_path)
+        println("Saved paraphrase for record id ", record_id)
     end
 
     save_dataset(records, dataset_path)
@@ -166,16 +178,28 @@ function preview_paraphrases(
     input_field::String = "natural_paraphrase",
     n::Int = 3,
     model::String = DEFAULT_MODEL,
+    min_id::Int = 525,
 )
     records = load_dataset(dataset_path)
     shown = 0
 
     for (i, record) in enumerate(records)
+        haskey(record, "id") || continue
+        record_id = try
+            Int(record["id"])
+        catch
+            continue
+        end
+        if record_id < min_id
+            continue
+        end
+
         haskey(record, input_field) || continue
 
         source_text = String(record[input_field])
         paraphrase = request_paraphrase(source_text; model=model)
 
+        println("Record id: ", record_id)
         println("Source: ", source_text)
         println("Output: ", paraphrase)
         println()
@@ -187,8 +211,8 @@ end
 
 function main()
     println("Loaded Paraphrase.jl")
-    println("Run `preview_paraphrases()` to inspect a few examples.")
-    println("Run `update_dataset_with_paraphrases()` to write them into the dataset.")
+    println("Run `preview_paraphrases(min_id=525)` to inspect a few examples from record id 525 onward.")
+    println("Run `update_dataset_with_paraphrases(overwrite=false, min_id=525)` to write them into the dataset from record id 525 onward.")
     println("Set OPENAI_API_KEY in your shell or place it in a local .env file.")
 end
 

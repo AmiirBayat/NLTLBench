@@ -83,7 +83,7 @@ missing = model.load_state_dict(state; strict=false)
 # NL_sentence = "(blue) or never (brown)"
 # NL_sentence = "Globally, everytime when (brown) and (blue) then all of the following conditions are true : (green)."
 # NL_sentence = "Globally, everytime when (brown) and (blue) then (green) is true."
-NL_sentence = "Either prop_1 holds, or from the next step onward, prop_2 remains true forever."
+NL_sentence = "In the next step, if prop_1 is true in the following step, then prop_2 is true."
 ####################################################################################################
 
 println("NL (raw): ", NL_sentence)
@@ -174,6 +174,8 @@ function llm_to_spot_ltl(s::AbstractString)::String
            return "!"
        elseif w == "imply" || w == "implies" || w == "implie" || w == "implicate" || w == "implies," || w == "imply,"
            return "->"
+        elseif w == "equal" || w == "equals" 
+           return "<->"
        elseif w == "true" || w == "tt"
            return "true"
        elseif w == "false" || w == "ff"

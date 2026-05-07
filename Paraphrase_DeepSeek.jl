@@ -4,7 +4,7 @@ using HTTP
 using DotEnv
 using Random
 
-const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL.json")
+const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 const DEFAULT_INPUT_FIELD = "natural_paraphrase"
 const DEFAULT_OUTPUT_FIELD = "paraphrase_deepseek"
 const DEFAULT_MODEL = "deepseek-chat"
@@ -180,6 +180,7 @@ function update_dataset_with_deepseek_paraphrases(
     output_field::String = DEFAULT_OUTPUT_FIELD,
     overwrite::Bool = false,
     model::String = DEFAULT_MODEL,
+    min_id::Int = 525,
 )
     records = load_dataset(dataset_path)
     updated_count = 0
@@ -187,27 +188,38 @@ function update_dataset_with_deepseek_paraphrases(
     failed_count = 0
 
     for record in records
+        haskey(record, "id") || continue
+        record_id = try
+            Int(record["id"])
+        catch
+            continue
+        end
+        if record_id < min_id
+            continue
+        end
+
         haskey(record, input_field) || continue
 
-        if !overwrite && haskey(record, output_field)
+        already_has_output = haskey(record, output_field) && !isempty(strip(String(record[output_field])))
+        if !overwrite && already_has_output
             skipped_count += 1
-            println("Skipping record ID ", get(record, "id", "?"), " because it already has a DeepSeek paraphrase.")
+            println("Skipping record ID ", record_id, " because it already has a DeepSeek paraphrase.")
             continue
         end
 
         source_text = String(record[input_field])
-        println("Processing record ID ", get(record, "id", "?"), "...")
+        println("Processing record ID ", record_id, "...")
 
         try
             paraphrase = request_deepseek_paraphrase(source_text; model=model)
             record[output_field] = paraphrase
             updated_count += 1
             save_dataset(records, dataset_path)
-            println("Saved DeepSeek paraphrase for record ID ", get(record, "id", "?"), ".")
+            println("Saved DeepSeek paraphrase for record ID ", record_id, ".")
             sleep(1.0)
         catch err
             failed_count += 1
-            println("Failed record ID ", get(record, "id", "?"), ": ", err)
+            println("Failed record ID ", record_id, ": ", err)
             println("Continuing to the next record.")
         end
     end
@@ -223,16 +235,28 @@ function preview_deepseek_paraphrases(
     input_field::String = DEFAULT_INPUT_FIELD,
     n::Int = 3,
     model::String = DEFAULT_MODEL,
+    min_id::Int = 525,
 )
     records = load_dataset(dataset_path)
     shown = 0
 
     for record in records
+        haskey(record, "id") || continue
+        record_id = try
+            Int(record["id"])
+        catch
+            continue
+        end
+        if record_id < min_id
+            continue
+        end
+
         haskey(record, input_field) || continue
 
         source_text = String(record[input_field])
         paraphrase = request_deepseek_paraphrase(source_text; model=model)
 
+        println("Record ID: ", record_id)
         println("Source: ", source_text)
         println("Output: ", paraphrase)
         println()
@@ -244,8 +268,8 @@ end
 
 function main()
     println("Loaded Paraphrase_DeepSeek.jl")
-    println("Run `preview_deepseek_paraphrases()` to inspect a few examples.")
-    println("Run `update_dataset_with_deepseek_paraphrases()` to write them into the dataset.")
+    println("Run `preview_deepseek_paraphrases(min_id=525)` to inspect a few examples from record id 525 onward.")
+    println("Run `update_dataset_with_deepseek_paraphrases(overwrite=false, min_id=525)` to write them into the dataset from record id 525 onward.")
     println("Set DEEPSEEK_API_KEY in your shell or place it in a local .env file.")
 end
 

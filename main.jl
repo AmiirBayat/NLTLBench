@@ -267,20 +267,21 @@ function main()
     save_json = true
     run_tag = timestamp_string()
 
-    n_formulas = 10
-    max_depth = 6
-    max_ast_size = 10
+    n_formulas = 50
+    max_depth = 14
+    min_ast_size = 40
+    max_ast_size = 60
 
     p_atom_at_max_depth = 1.0
-    p_atom_before_max_depth = 0.18
-    unary_weight = 0.25
-    binary_weight = 0.55
+    p_atom_before_max_depth = 0.02
+    unary_weight = 0.45
+    binary_weight = 0.95
     allow_boolean_constants = false
     boolean_constants = ["true", "false"]
     boolean_unary_ops = [:!]
-    boolean_binary_ops = [:&, :|]#, :->, Symbol("<->")]
+    boolean_binary_ops = [:&, :|, :->] # Symbol("<->")]
 
-    max_attempts_per_formula = 500
+    max_attempts_per_formula = 4000
     enforce_unique_formulas = true
     uniqueness_mode = :normalized
     redundancy_mode = :normalized
@@ -378,6 +379,20 @@ function main()
     end
 
     # --------------------------------------------------------------------------
+    # Enforce minimum AST size on the final selected formula
+    # --------------------------------------------------------------------------
+    before_count = length(accepted_statuses)
+    accepted_statuses = [
+        item for item in accepted_statuses
+        if ast_size(final_selected_formula_ast(item[1])) >= min_ast_size
+    ]
+    removed = before_count - length(accepted_statuses)
+    if removed > 0
+        println("Removed $(removed) formulas whose final selected AST size is smaller than $(min_ast_size) before saving.")
+    end
+    accepted = [item[1] for item in accepted_statuses]
+
+    # --------------------------------------------------------------------------
     # Save results
     # --------------------------------------------------------------------------
     json_output_path = dataset_json_path
@@ -403,6 +418,8 @@ function main()
     println("  Semantic redundancy enabled: ", semantic_redundancy)
     println("  Semantic backend: ", semantic_backend, "\n")
     println("  Require temporal operator: ", require_temporal_operator)
+    println("  Minimum final AST size: ", min_ast_size)
+    println("  Maximum generated AST size: ", max_ast_size)
     println("  Exact satisfiability check: ", exact_satisfiability_check)
     println("  Exact tautology check: ", exact_tautology_check, "\n")
     println("Saved files:")

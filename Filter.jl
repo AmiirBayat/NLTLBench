@@ -597,14 +597,36 @@ function is_constant_string(formula_str::AbstractString)
 end
 
 function is_trivial(formula::LTLFormula)
-    simplified_local = simplify_formula_local(formula)
-    simplified_str = simplify_formula(formula)
+    simplified = try
+        final_selected_formula_ast(formula)
+    catch
+        simplify_formula_local(formula)
+    end
 
-    if is_constant_string(simplified_str)
+    simplified_str = formula_to_string(simplified)
+
+    # Constants are trivial.
+    if simplified_str in ("true", "false")
         return true
     end
 
-    return formula_reduction_tuple(simplified_local) < formula_reduction_tuple(formula)
+    # A single proposition is trivial.
+    if simplified isa AP
+        return true
+    end
+
+    # A negated single proposition is also trivial.
+    if simplified isa UnaryLTL && simplified.op == :! && simplified.child isa AP
+        return true
+    end
+
+    # Very small non-temporal boolean leftovers are trivial, but temporal formulas
+    # that merely simplify structurally are not.
+    if !has_temporal_operator(simplified) && ast_size(simplified) <= 3
+        return true
+    end
+
+    return false
 end
 
 # ----------------------------------------------------------------------------------------------
@@ -998,17 +1020,17 @@ function tokenize_ltl_formula_string(formula_str::AbstractString)
             else
                 throw(ArgumentError("Could not tokenize LTL formula string: $(formula_str)"))
             end
-        elseif isletter(ch)
+        elseif isletter(ch) || isdigit(ch)
             start = i
             i = nextind(s, i)
             while i <= lastindex(s) && ((isletter(s[i]) || isdigit(s[i])) || s[i] == '_')
                 i = nextind(s, i)
             end
             word = s[start:prevind(s, i)]
-            if word == "true"
-                push!(tokens, (:TRUE, word))
-            elseif word == "false"
-                push!(tokens, (:FALSE, word))
+            if word == "true" || word == "1"
+                push!(tokens, (:TRUE, "true"))
+            elseif word == "false" || word == "0"
+                push!(tokens, (:FALSE, "false"))
             else
                 push!(tokens, (:AP, word))
             end
@@ -1199,7 +1221,9 @@ function final_selected_formula_string(formula::LTLFormula)
 end
 
 function final_selected_formula_ast(formula::LTLFormula)
-    return parse_ltl_formula_string(final_selected_formula_string(formula))
+    selected_str = final_selected_formula_string(formula)
+    selected_str = selected_str == "1" ? "true" : (selected_str == "0" ? "false" : selected_str)
+    return parse_ltl_formula_string(selected_str)
 end
 
 function count_atomic_props(formula::LTLFormula, seen::Set{String}=Set{String}())

@@ -6,9 +6,9 @@ using HTTP
 using DotEnv
 using Dates
 
-const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL.json")
-const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "GPT54.json")
-const DEFAULT_MODEL = "gpt-5.4"
+const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
+const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "GPT55.json")
+const DEFAULT_MODEL = "gpt-5.5"
 const DEFAULT_API_URL = "https://api.openai.com/v1/responses"
 const DEFAULT_INPUT_FIELDS = [
     "natural_paraphrase",
@@ -171,7 +171,6 @@ function request_gpt54_translation(
     body = Dict(
         "model" => model,
         "input" => prompt,
-        "temperature" => temperature,
     )
 
     headers = [
@@ -213,6 +212,11 @@ end
 function existing_result_keys(results_obj::OrderedDict{String,Any})
     keys_set = Set{String}()
     for entry in results_obj["results"]
+        status = haskey(entry, "status") ? String(entry["status"]) : (haskey(entry, :status) ? String(entry[:status]) : "")
+        if status != "ok"
+            continue
+        end
+
         if (haskey(entry, "record_id") || haskey(entry, :record_id)) && (haskey(entry, "input_field") || haskey(entry, :input_field))
             rid = haskey(entry, "record_id") ? entry["record_id"] : entry[:record_id]
             field = haskey(entry, "input_field") ? String(entry["input_field"]) : String(entry[:input_field])
@@ -223,7 +227,13 @@ function existing_result_keys(results_obj::OrderedDict{String,Any})
 end
 
 function append_result!(results_obj::OrderedDict{String,Any}, entry::OrderedDict{String,Any})
-    push!(results_obj["results"], entry)
+    existing_entries = OrderedDict{String,Any}[]
+    for item in results_obj["results"]
+        push!(existing_entries, OrderedDict{String,Any}(String(k) => v for (k, v) in pairs(item)))
+    end
+
+    push!(existing_entries, entry)
+    results_obj["results"] = existing_entries
     results_obj["updated_at"] = string(now())
     return results_obj
 end
@@ -386,7 +396,7 @@ end
 
 function main()
     println("Loaded GPT_Performance.jl")
-    println("Run `evaluate_gpt54_on_benchmark()` to evaluate GPT-5.4 on the dataset.")
+    println("Run `evaluate_gpt54_on_benchmark()` to evaluate GPT-5.5 on the dataset.")
     println("Run `summarize_results()` to print a results summary.")
 end
 

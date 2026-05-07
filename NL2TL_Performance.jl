@@ -107,7 +107,7 @@ function map_token(tok::AbstractString)::String
         return "!"
     elseif w == "imply" || w == "implies" || w == "implie" || w == "implicate"
         return "->"
-    elseif w == "equivalent" || w == "equivalence" || w == "equal"
+    elseif w == "equivalent" || w == "equivalence" || w == "equal" || w == "equals"
         return "<->"
     elseif w == "true" || w == "tt"
         return "true"
@@ -119,9 +119,52 @@ function map_token(tok::AbstractString)::String
 end
 
 function canonicalize_simple_unary_forms(t::String)::String
-
     return strip(t)
+end
 
+function wrap_simple_unary_operands(t::String)::String
+    s = t
+    s = replace(s, r"\bG\s+(prop_\d+|true|false)\b" => s"G(\1)")
+    s = replace(s, r"\bF\s+(prop_\d+|true|false)\b" => s"F(\1)")
+    s = replace(s, r"\bX\s+(prop_\d+|true|false)\b" => s"X(\1)")
+    s = replace(s, r"!\s+(prop_\d+|true|false)\b" => s"!(\1)")
+    return s
+end
+
+function drop_extra_closing_parentheses(t::String)::String
+    io = IOBuffer()
+    balance = 0
+    for c in t
+        if c == '('
+            balance += 1
+            print(io, c)
+        elseif c == ')'
+            if balance > 0
+                balance -= 1
+                print(io, c)
+            end
+        else
+            print(io, c)
+        end
+    end
+    return String(take!(io))
+end
+
+function add_missing_closing_parentheses(t::String)::String
+    opens = count(==( '(' ), t)
+    closes = count(==( ')' ), t)
+    if opens > closes
+        return t * repeat(")", opens - closes)
+    end
+    return t
+end
+
+function repair_ltl_for_ltlfilt(t::AbstractString)::String
+    repaired = strip(String(t))
+    repaired = replace(repaired, r"\s+" => " ")
+    repaired = wrap_simple_unary_operands(repaired)
+    repaired = replace(repaired, r"\s+" => " ")
+    return strip(repaired)
 end
 
 function llm_to_spot_ltl(s::AbstractString)::String
@@ -168,6 +211,16 @@ function llm_to_spot_ltl(s::AbstractString)::String
     normalized = replace(normalized, r"\s+" => " ")
     normalized = canonicalize_simple_unary_forms(normalized)
     return strip(normalized)
+end
+
+function ltl_is_parseable(formula::AbstractString)::Bool
+    ltlfilt_path = Sys.which("ltlfilt")
+    isnothing(ltlfilt_path) && throw(ArgumentError("Spot's `ltlfilt` was not found in PATH."))
+
+    cmd = `$(ltlfilt_path) -f $(String(formula)) -q`
+    process = run(cmd; wait=false)
+    wait(process)
+    return process.exitcode == 0
 end
 
 # =================================================================================================
@@ -284,7 +337,19 @@ function successful_result_keys(results_obj::OrderedDict{String,Any})
 end
 
 function append_result!(results_obj::OrderedDict{String,Any}, entry::OrderedDict{String,Any})
-    push!(results_obj["results"], entry)
+    entries = results_obj["results"]
+    new_key = result_key(entry["record_id"], String(entry["input_field"]))
+
+    filtered = OrderedDict{String,Any}[]
+    for existing in entries
+        existing_key = result_key(existing["record_id"], String(existing["input_field"]))
+        if existing_key != new_key
+            push!(filtered, existing)
+        end
+    end
+
+    push!(filtered, entry)
+    results_obj["results"] = filtered
     return results_obj
 end
 
@@ -386,6 +451,9 @@ function evaluate_nl2tl_on_benchmark(
 
             println("Processing record ID ", get(record, "id", "?"), " field `", field, "`...")
 
+            predicted_ltl = nothing
+            repaired_ltl = nothing
+
             try
                 predicted_ltl = translate_sentence_to_ltl(
                     tokenizer,
@@ -398,13 +466,25 @@ function evaluate_nl2tl_on_benchmark(
                 )
                 println("Predicted normalized LTL: ", predicted_ltl)
                 original_ltl = String(record["LTL"])
-                equivalent = are_equivalent(predicted_ltl, original_ltl)
+
+                final_ltl = predicted_ltl
+                if !ltl_is_parseable(final_ltl)
+                    repaired_ltl = repair_ltl_for_ltlfilt(predicted_ltl)
+                    println("Predicted repaired LTL: ", repaired_ltl)
+                    if ltl_is_parseable(repaired_ltl)
+                        final_ltl = repaired_ltl
+                    else
+                        error("Both raw and repaired LTL are unparsable. Raw=`$(predicted_ltl)` Repaired=`$(repaired_ltl)`")
+                    end
+                end
+
+                equivalent = are_equivalent(final_ltl, original_ltl)
 
                 entry = make_result_entry(
                     record,
                     field,
                     source_text,
-                    predicted_ltl,
+                    final_ltl,
                     equivalent,
                     "ok";
                     model_checkpoint=model_checkpoint,
@@ -420,7 +500,7 @@ function evaluate_nl2tl_on_benchmark(
                     record,
                     field,
                     source_text,
-                    nothing,
+                    predicted_ltl,
                     nothing,
                     "error";
                     model_checkpoint=model_checkpoint,
