@@ -45,9 +45,12 @@ Base.@kwdef struct LTLGeneratorConfig
     boolean_unary_ops::Vector{Symbol} = [:!]
     boolean_binary_ops::Vector{Symbol} = [:&, :|, :->, Symbol("<->")]
     max_ast_size::Union{Nothing, Int} = nothing
+    min_ast_size::Union{Nothing, Int} = nothing
     max_attempts_per_formula::Int = 100
     enforce_unique_formulas::Bool = true
     uniqueness_mode::Symbol = :normalized
+    backend::Symbol = :local
+    spot_binary::String = "randltl"
 end
 
 # ----------------------------------------------------------------------------------------------
@@ -76,6 +79,91 @@ function split_temporal_operators(temporal_ops::Vector{Symbol})
     end
 
     return unary_ops, binary_ops
+end
+
+function validate_generator_backend(cfg::LTLGeneratorConfig)
+    if !(cfg.backend in (:local, :spot))
+        throw(ArgumentError("`cfg.backend` must be either :local or :spot."))
+    end
+    return nothing
+end
+
+function spot_formula_to_ast(formula_str::String)
+    if !isdefined(Main, :parse_ltl_formula_string)
+        throw(ArgumentError("Spot backend requires `parse_ltl_formula_string` to be available. Please include `Filter.jl` before calling the Spot backend."))
+    end
+    return Main.parse_ltl_formula_string(formula_str)
+end
+
+function synthesize_formulas_spot(
+    n::Int,
+    atomic_props::Vector{String},
+    temporal_ops::Vector{Symbol};
+    cfg::LTLGeneratorConfig = LTLGeneratorConfig(),
+)
+    n < 1 && throw(ArgumentError("`n` must be at least 1."))
+    isempty(atomic_props) && throw(ArgumentError("`atomic_props` cannot be empty when using the Spot backend."))
+
+    randltl_path = Sys.which(cfg.spot_binary)
+    isnothing(randltl_path) && throw(ArgumentError("Spot backend requested, but `$(cfg.spot_binary)` was not found in PATH."))
+
+    formulas = LTLFormula[]
+    seen = Set{String}()
+    total_attempts = 0
+    max_total_attempts = max(n * cfg.max_attempts_per_formula, cfg.max_attempts_per_formula)
+
+    while length(formulas) < n
+        total_attempts += 1
+        if total_attempts > max_total_attempts
+            throw(ArgumentError(
+                "Could not generate $(n) formulas with Spot under the current constraints within $(max_total_attempts) attempts. Try relaxing uniqueness, removing `max_ast_size`, or increasing `max_attempts_per_formula`."
+            ))
+        end
+
+        remaining = n - length(formulas)
+        batch_size = max(remaining, 1)
+
+        tree_size_args = String[]
+        if !isnothing(cfg.min_ast_size) && !isnothing(cfg.max_ast_size)
+            push!(tree_size_args, "--tree-size=$(cfg.min_ast_size)..$(cfg.max_ast_size)")
+        elseif !isnothing(cfg.max_ast_size)
+            push!(tree_size_args, "--tree-size=1..$(cfg.max_ast_size)")
+        elseif !isnothing(cfg.min_ast_size)
+            push!(tree_size_args, "--tree-size=$(cfg.min_ast_size)..9999")
+        end
+
+        cmd = `$(randltl_path) -n $(batch_size) $(tree_size_args...) $(atomic_props...)`
+        output = read(cmd, String)
+        lines = split(strip(output), '\n'; keepempty=false)
+
+        for line in lines
+            formula_str = strip(line)
+            isempty(formula_str) && continue
+
+            formula = try
+                spot_formula_to_ast(formula_str)
+            catch
+                continue
+            end
+
+            if !isnothing(cfg.max_ast_size) && ast_size(formula) > cfg.max_ast_size
+                continue
+            end
+
+            if cfg.enforce_unique_formulas
+                key = cfg.uniqueness_mode == :exact ? formula_to_string(formula) : normalized_formula_string(formula)
+                if key in seen
+                    continue
+                end
+                push!(seen, key)
+            end
+
+            push!(formulas, formula)
+            length(formulas) >= n && break
+        end
+    end
+
+    return formulas
 end
 
 # ----------------------------------------------------------------------------------------------
@@ -315,7 +403,11 @@ function synthesize_formulas(
     rng::AbstractRNG = Random.default_rng(),
 )
     n < 1 && throw(ArgumentError("`n` must be at least 1."))
+    validate_generator_backend(cfg)
 
+    if cfg.backend == :spot
+        return synthesize_formulas_spot(n, atomic_props, temporal_ops; cfg=cfg)
+    end
     if !(cfg.uniqueness_mode in (:exact, :normalized))
         throw(ArgumentError("`cfg.uniqueness_mode` must be either :exact or :normalized."))
     end
@@ -362,6 +454,7 @@ end
 
 """
     generate_ltl_formulas(; atomic_props, temporal_ops, n=1, max_depth=4, max_ast_size=nothing,
+                            min_ast_size=nothing,
                             p_atom_at_max_depth=1.0, p_atom_before_max_depth=0.25,
                             unary_weight=0.35, binary_weight=0.40,
                             allow_boolean_constants=false,
@@ -371,6 +464,7 @@ end
                             max_attempts_per_formula=100,
                             enforce_unique_formulas=false,
                             uniqueness_mode=:exact,
+                            backend=:local,
                             rng=Random.default_rng())
 
 High-level API intended to be called from `main.jl`.
@@ -382,6 +476,7 @@ function generate_ltl_formulas(;
     n::Int = 1,
     max_depth::Int = 4,
     max_ast_size::Union{Nothing, Int} = nothing,
+    min_ast_size::Union{Nothing, Int} = nothing,
     p_atom_at_max_depth::Float64 = 1.0,
     p_atom_before_max_depth::Float64 = 0.25,
     unary_weight::Float64 = 0.35,
@@ -393,6 +488,7 @@ function generate_ltl_formulas(;
     max_attempts_per_formula::Int = 100,
     enforce_unique_formulas::Bool = true,
     uniqueness_mode::Symbol = :normalized,
+    backend::Symbol = :local,
     rng::AbstractRNG = Random.default_rng(),
 )
     cfg = LTLGeneratorConfig(
@@ -406,9 +502,11 @@ function generate_ltl_formulas(;
         boolean_unary_ops = boolean_unary_ops,
         boolean_binary_ops = boolean_binary_ops,
         max_ast_size = max_ast_size,
+        min_ast_size = min_ast_size,
         max_attempts_per_formula = max_attempts_per_formula,
         enforce_unique_formulas = enforce_unique_formulas,
         uniqueness_mode = uniqueness_mode,
+        backend = backend,
     )
 
     return synthesize_formulas(n, atomic_props, temporal_ops; cfg=cfg, rng=rng)
@@ -446,6 +544,14 @@ if abspath(PROGRAM_FILE) == @__FILE__
         println("  Operator counts: ", operator_counts(formula))
         println()
     end
+    # Example using Spot directly (requires `randltl` in PATH and `Filter.jl` included beforehand):
+    # formulas_spot = generate_ltl_formulas(
+    #     atomic_props = atomic_props,
+    #     temporal_ops = temporal_ops,
+    #     n = 5,
+    #     max_ast_size = 10,
+    #     backend = :spot,
+    # )
 end 
 
 # end # module

@@ -15,27 +15,19 @@ using Dates
 
 const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 
-#const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "Gemini.json")
-#const DEFAULT_PROVIDER = :gemini
-#const DEFAULT_MODEL = "gemini-3-flash-preview"
-#const DEFAULT_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
-#const DEFAULT_API_KEY_ENV = "GEMINI_API_KEY"
-#const DEFAULT_INCLUDE_TEMPERATURE = false
-#const DEFAULT_TEMPERATURE = 0.0
-#const DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
-#const DEFAULT_MAX_TOKENS = 1024
 
-const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "DeepSeek.json")
+const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "Mistral_fewshot.json")
+const DEFAULT_PROMPT_SETTING = "fewshot"
 
-const DEFAULT_PROVIDER = :deepseek
-const DEFAULT_MODEL = "deepseek-v4-flash"
-const DEFAULT_API_URL = "https://api.deepseek.com/chat/completions"
-const DEFAULT_API_KEY_ENV = "DEEPSEEK_API_KEY"
+const DEFAULT_PROVIDER = :mistral
+const DEFAULT_MODEL = "mistral-medium-latest"
+const DEFAULT_API_URL = "https://api.mistral.ai/v1/chat/completions"
+const DEFAULT_API_KEY_ENV = "MISTRAL_API_KEY"
 const DEFAULT_INCLUDE_TEMPERATURE = false
 const DEFAULT_TEMPERATURE = 0.0
 const DEFAULT_ANTHROPIC_VERSION = "2023-06-01"
 const DEFAULT_MAX_TOKENS = 1024
-const DEFAULT_REASONING_EFFORT = "medium"
+const DEFAULT_REASONING_EFFORT = "disabled"
 const DEFAULT_DEEPSEEK_THINKING_TYPE = "disabled"
 
 const DEFAULT_INPUT_FIELDS = [
@@ -80,6 +72,7 @@ function initial_results_object(
         "dataset_path" => dataset_path,
         "translation_provider" => string(provider),
         "translation_model" => model,
+        "prompt_setting" => DEFAULT_PROMPT_SETTING,
         "input_fields" => input_fields,
         "created_at" => string(now()),
         "updated_at" => string(now()),
@@ -138,10 +131,50 @@ function build_translation_prompt(sentence::AbstractString)
         "Output rules:",
         "- Output only the LTL formula.",
         "- Do not add explanations, comments, labels, or code fences.",
-        "- Keep proposition names exactly as they appear (prop_1, prop_2, ...).",
+        "- Keep proposition names exactly as they appear, e.g., prop_1, prop_2, ...",
         "- Preserve the exact logical and temporal meaning.",
         "- Do not introduce domain assumptions.",
-        "- Use standard LTL operators such as ! (not), & (and), | (or), -> (implies), <-> (iff), X (next), F (eventually), G (always), U (until) when needed.",
+        "- Do not use any proposition outside the available proposition names in the input.",
+        "- Use only the operators ! (not), & (and), | (or), -> (implies), <-> (if and only if), X (next), F (eventually), G (globally), U (until).",
+        "- Use parentheses to avoid ambiguity.",
+        "",
+        "Examples:",
+        "",
+        "Natural language statement:",
+        "Globally, if prop_1 holds, then prop_3 is true until prop_2.",
+        "",
+        "LTL:",
+        "G (prop_1 -> (prop_3 U prop_2))",
+        "",
+        "Natural language statement:",
+        "If prop_1 holds, then from that point on prop_2 must always hold.",
+        "",
+        "LTL:",
+        "(prop_1 -> G (prop_2))",
+        "",
+        "Natural language statement:",
+        "prop_1 holds exactly when prop_2 always holds.",
+        "",
+        "LTL:",
+        "(prop_1 <-> G (prop_2))",
+        "",
+        "Natural language statement:",
+        "Eventually prop_1 holds, and after that eventually prop_2 holds.",
+        "",
+        "LTL:",
+        "F (prop_1 & F (prop_2))",
+        "",
+        "Natural language statement:",
+        "prop_1 must never occur.",
+        "",
+        "LTL:",
+        "G (!prop_1)",
+        "",
+        "Natural language statement:",
+        "prop_1 holds until prop_2 occurs.",
+        "",
+        "LTL:",
+        "(prop_1 U prop_2)",
         "",
         "Natural language statement:",
         String(sentence),
@@ -373,6 +406,7 @@ function request_translation(
             ],
             "temperature" => temperature,
             "stream" => false,
+            "thinking" => Dict("type" => deepseek_thinking_type),
         )
         headers = [
             "Authorization" => "Bearer $(api_key)",
@@ -504,6 +538,7 @@ function make_result_entry(
         "source_model" => paraphrase_source_model(input_field),
         "translation_provider" => string(translation_provider),
         "translation_model" => translation_model,
+        "prompt_setting" => DEFAULT_PROMPT_SETTING,
         "source_text" => String(source_text),
         "original_ltl" => String(get(record, "LTL", "")),
         "predicted_ltl" => isnothing(predicted_ltl) ? nothing : String(predicted_ltl),
@@ -652,6 +687,7 @@ function summarize_results(results_path::String = DEFAULT_RESULTS_PATH)
     end
 
     println("Results path: ", results_path)
+    println("Prompt setting: ", haskey(results_obj, "prompt_setting") ? results_obj["prompt_setting"] : "unknown")
     println("Total evaluated: ", total)
     println("Successful translations: ", ok_count)
     println("Errors: ", error_count)

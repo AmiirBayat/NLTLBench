@@ -26,11 +26,6 @@ function build_appended_record(source_record::OrderedDict{String,Any}, new_id::I
     )
 
     for key in [
-        "back_translation",
-        "formula_size",
-        "nesting_depth",
-        "operators",
-        "proposition_count",
         "temporal_behavior",
         "ast_size",
         "ast_depth",
@@ -46,6 +41,16 @@ function build_appended_record(source_record::OrderedDict{String,Any}, new_id::I
     return entry
 end
 
+function existing_ltl_set(records)
+    ltl_set = Set{String}()
+    for record in records
+        if haskey(record, "LTL")
+            push!(ltl_set, strip(String(record["LTL"])))
+        end
+    end
+    return ltl_set
+end
+
 function append_new_ltl_dataset_entries_to_main_dataset(
     source_dataset_path::String = DEFAULT_SOURCE_DATASET_PATH;
     target_dataset_path::String = DEFAULT_TARGET_DATASET_PATH,
@@ -55,6 +60,7 @@ function append_new_ltl_dataset_entries_to_main_dataset(
     target_records = load_dataset(target_dataset_path)
 
     next_id = next_available_id(target_records)
+    existing_ltls = existing_ltl_set(target_records)
     added_count = 0
 
     for source_record in source_records
@@ -69,7 +75,13 @@ function append_new_ltl_dataset_entries_to_main_dataset(
         end
         haskey(source_record, "LTL") || continue
 
+        ltl = strip(String(source_record["LTL"]))
+        if ltl in existing_ltls
+            continue
+        end
+
         push!(target_records, build_appended_record(source_record, next_id))
+        push!(existing_ltls, ltl)
         next_id += 1
         added_count += 1
     end
@@ -77,7 +89,7 @@ function append_new_ltl_dataset_entries_to_main_dataset(
     save_dataset(target_records, target_dataset_path)
 
     println("Appended ", added_count, " entries from ", source_dataset_path, " to: ", target_dataset_path)
-    println("Only source records with id >= ", min_source_id, " were added.")
+    println("Only source records with id >= ", min_source_id, " and new LTL strings were added.")
 end
 
 function remove_appended_metadata_fields(
@@ -136,6 +148,50 @@ function save_dataset(records, dataset_path::String = DEFAULT_DATASET_PATH)
         JSON3.pretty(io, records)
         write(io, "\n")
     end
+end
+
+function get_ltl2tgba_path()
+    path = Sys.which("ltl2tgba")
+    isnothing(path) && throw(ArgumentError(
+        "`ltl2tgba` was not found in PATH. Please install Spot and make sure `ltl2tgba` is available."
+    ))
+    return path
+end
+
+function automaton_num_states_and_transitions(formula::AbstractString)
+    ltl2tgba_path = get_ltl2tgba_path()
+    cmd = `$(ltl2tgba_path) -f $(String(formula))`
+    output = read(cmd, String)
+
+    states = nothing
+    transitions = 0
+    in_body = false
+
+    for raw_line in split(output, '\n')
+        line = strip(raw_line)
+        isempty(line) && continue
+
+        if startswith(line, "States:")
+            value_str = strip(split(line, ":"; limit=2)[2])
+            states = try
+                parse(Int, value_str)
+            catch
+                throw(ArgumentError("Could not parse automaton state count from ltl2tgba output line: $(repr(line))"))
+            end
+        elseif line == "--BODY--"
+            in_body = true
+        elseif line == "--END--"
+            in_body = false
+        elseif in_body && startswith(line, "[")
+            transitions += 1
+        end
+    end
+
+    isnothing(states) && throw(ArgumentError(
+        "Could not find `States:` in ltl2tgba output for formula $(repr(String(formula)))."
+    ))
+
+    return states, transitions
 end
 
 function tokenize_ltl_metadata(formula::AbstractString)
@@ -201,6 +257,67 @@ end
 
 function is_proposition_token(tok::AbstractString)
     return startswith(tok, "prop_")
+end
+
+function is_nnf_formula(formula::AbstractString)
+    tokens = tokenize_ltl_metadata(formula)
+    isempty(tokens) && return false
+
+    function parse_formula(i::Int)
+        i > length(tokens) && error("Unexpected end of formula while checking NNF")
+        tok = tokens[i]
+
+        if tok == "("
+            inner_node, j = parse_formula(i + 1)
+            j > length(tokens) && error("Missing closing parenthesis while checking NNF")
+
+            if tokens[j] == ")"
+                return inner_node, j + 1
+            end
+
+            op = tokens[j]
+            op in ("&", "|", "U", "R", "W", "M", "->", "<->") || error("Unexpected binary operator $(op) while checking NNF")
+            right_node, k = parse_formula(j + 1)
+            k > length(tokens) && error("Missing closing parenthesis while checking NNF")
+            tokens[k] == ")" || error("Missing closing parenthesis while checking NNF")
+            return (kind=:binary, op=op, left=inner_node, right=right_node), k + 1
+        elseif tok == "!"
+            child_node, j = parse_formula(i + 1)
+            return (kind=:not, child=child_node), j
+        elseif tok in ("X", "F", "G")
+            child_node, j = parse_formula(i + 1)
+            return (kind=:unary, op=tok, child=child_node), j
+        else
+            return (kind=:atom, value=tok), i + 1
+        end
+    end
+
+    function nnf_ok(node)
+        kind = node.kind
+
+        if kind == :atom
+            return is_proposition_token(String(node.value))
+        elseif kind == :not
+            return node.child.kind == :atom && is_proposition_token(String(node.child.value))
+        elseif kind == :unary
+            node.op in ("X", "F", "G") || return false
+            return nnf_ok(node.child)
+        elseif kind == :binary
+            node.op in ("->", "<->", "R", "W", "M") && return false
+            node.op in ("&", "|", "U") || return false
+            return nnf_ok(node.left) && nnf_ok(node.right)
+        else
+            return false
+        end
+    end
+
+    try
+        node, next_i = parse_formula(1)
+        next_i == length(tokens) + 1 || return false
+        return nnf_ok(node)
+    catch
+        return false
+    end
 end
 
 function compute_formula_metadata(formula::AbstractString)
@@ -379,6 +496,81 @@ function update_existing_records_with_formula_size(
     println("Updated formula_size for ", changed_count, " records with id <= ", max_id, " in: ", dataset_path)
 end
 
+function update_dataset_with_automaton_size_information(
+    dataset_path::String = DEFAULT_DATASET_PATH;
+    min_id::Int = 1,
+    max_id::Int = typemax(Int),
+    overwrite::Bool = false,
+)
+    records = load_dataset(dataset_path)
+    changed_count = 0
+    skipped_count = 0
+
+    for record in records
+        haskey(record, "id") || continue
+        record_id = try
+            Int(record["id"])
+        catch
+            continue
+        end
+        if record_id < min_id || record_id > max_id
+            continue
+        end
+        haskey(record, "LTL") || continue
+
+        already_has_all = haskey(record, "automaton_num_states") &&
+                          haskey(record, "automaton_num_transitions") &&
+                          haskey(record, "automaton_size")
+        if !overwrite && already_has_all
+            skipped_count += 1
+            continue
+        end
+
+        num_states, num_transitions = automaton_num_states_and_transitions(String(record["LTL"]))
+        record["automaton_num_states"] = num_states
+        record["automaton_num_transitions"] = num_transitions
+        record["automaton_size"] = num_states + num_transitions
+        changed_count += 1
+    end
+
+    save_dataset(records, dataset_path)
+
+    println("Updated automaton size information for ", changed_count, " records in: ", dataset_path)
+    println("Skipped ", skipped_count, " records that already had automaton_num_states, automaton_num_transitions, and automaton_size.")
+    println("Processed record ids in [", min_id, ", ", max_id, "].")
+end
+
+function update_dataset_with_nnf_information(
+    dataset_path::String = DEFAULT_DATASET_PATH;
+    min_id::Int = 1,
+    max_id::Int = typemax(Int),
+)
+    records = load_dataset(dataset_path)
+    changed_count = 0
+
+    for record in records
+        haskey(record, "id") || continue
+        record_id = try
+            Int(record["id"])
+        catch
+            continue
+        end
+        if record_id < min_id || record_id > max_id
+            continue
+        end
+        haskey(record, "LTL") || continue
+
+        record["is_nnf"] = is_nnf_formula(String(record["LTL"]))
+        changed_count += 1
+    end
+
+    save_dataset(records, dataset_path)
+
+    println("Updated NNF information for ", changed_count, " records in: ", dataset_path)
+    println("Added/updated field: is_nnf")
+    println("Processed record ids in [", min_id, ", ", max_id, "].")
+end
+
 function main()
     println("Loaded ModifyDataset.jl")
     println("Run `update_dataset_paraphrase_keys()` to rename `paraphrase` to `paraphrase_gpt5.4-mini` and remove `paraphrase_model`.")
@@ -386,6 +578,8 @@ function main()
     println("Run `update_existing_records_with_formula_size(max_id=524)` to add only formula_size to the earlier records.")
     println("Run `append_new_ltl_dataset_entries_to_main_dataset(min_source_id=525)` to append new entries from dataset/ltl_dataset.json to DatasetWithNaturalNL_plus_simplified.json.")
     println("Run `remove_appended_metadata_fields(min_appended_id=525)` to remove `origin` and `source_record_id` from the appended records.")
+    println("Run `update_dataset_with_automaton_size_information(min_id=1)` to compute automaton_num_states, automaton_num_transitions, and automaton_size for each LTL formula.")
+    println("Run `update_dataset_with_nnf_information(min_id=1)` to add `is_nnf`, where NNF means negations appear only in front of atomic propositions and only X, F, G, and U are kept as temporal operators, with implication/equivalence excluded.")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

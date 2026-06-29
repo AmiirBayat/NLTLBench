@@ -933,19 +933,55 @@ end
 
 # Helper to normalize atomic proposition names in a string
 
-function normalize_prop_names_in_string(formula_str::AbstractString)
-    pattern = r"prop_\d+"
-    mapping = Dict{String,String}()
-    counter = 1
+function is_spot_style_atomic_prop(name::AbstractString)::Bool
+    return occursin(r"^p\d+$", String(name))
+end
 
-    return replace(String(formula_str), pattern => (m -> begin
-        key = String(m)
-        if !haskey(mapping, key)
-            mapping[key] = "prop_$(counter)"
-            counter += 1
+function maybe_map_spot_atomic_prop(name::AbstractString)::String
+    s = String(name)
+    if is_spot_style_atomic_prop(s)
+        idx = parse(Int, s[2:end]) + 1
+        return "prop_$(idx)"
+    end
+    return s
+end
+
+function rewrite_atomic_props(formula::LTLFormula, mapper::Function)::LTLFormula
+    if formula isa AP
+        name = String(formula.name)
+        if name in ("true", "false")
+            return formula
         end
-        return mapping[key]
-    end))
+        return AP(mapper(name))
+    elseif formula isa UnaryLTL
+        return UnaryLTL(formula.op, rewrite_atomic_props(formula.child, mapper))
+    elseif formula isa BinaryLTL
+        return BinaryLTL(
+            formula.op,
+            rewrite_atomic_props(formula.left, mapper),
+            rewrite_atomic_props(formula.right, mapper),
+        )
+    else
+        return formula
+    end
+end
+
+function normalize_prop_names_in_string(formula_str::AbstractString)
+    normalized = strip(String(formula_str))
+    normalized = normalized == "1" ? "true" : (normalized == "0" ? "false" : normalized)
+
+    parsed = try
+        parse_ltl_formula_string(normalized)
+    catch
+        return String(formula_str)
+    end
+
+    ap_names = collect(count_atomic_props(parsed))
+    if !isempty(ap_names) && all(is_spot_style_atomic_prop, ap_names)
+        parsed = rewrite_atomic_props(parsed, maybe_map_spot_atomic_prop)
+    end
+
+    return formula_to_string(parsed)
 end
 
 
@@ -1223,7 +1259,14 @@ end
 function final_selected_formula_ast(formula::LTLFormula)
     selected_str = final_selected_formula_string(formula)
     selected_str = selected_str == "1" ? "true" : (selected_str == "0" ? "false" : selected_str)
-    return parse_ltl_formula_string(selected_str)
+    parsed = parse_ltl_formula_string(selected_str)
+
+    ap_names = collect(count_atomic_props(parsed))
+    if !isempty(ap_names) && all(is_spot_style_atomic_prop, ap_names)
+        parsed = rewrite_atomic_props(parsed, maybe_map_spot_atomic_prop)
+    end
+
+    return parsed
 end
 
 function count_atomic_props(formula::LTLFormula, seen::Set{String}=Set{String}())

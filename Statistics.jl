@@ -8,6 +8,56 @@ using Plots
 const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 const DEFAULT_FIELDS = ["LTL", "simplified_formula"]
 const DEFAULT_SIZE_HISTOGRAM_PATH = joinpath(@__DIR__, "dataset", "formula_size_histogram.png")
+const DEFAULT_AUTOMATON_SIZE_HISTOGRAM_PATH = joinpath(@__DIR__, "dataset", "automaton_size_histogram.png")
+const DEFAULT_MIN_EQUIV_SIZE_HISTOGRAM_PATH = joinpath(@__DIR__, "dataset", "min_equiv_formula_size_histogram.png")
+function plot_automaton_size_distribution(
+    records;
+    output_path::String = DEFAULT_AUTOMATON_SIZE_HISTOGRAM_PATH,
+)
+    automaton_sizes = Int[]
+
+    for record in records
+        if haskey(record, "automaton_size")
+            push!(automaton_sizes, Int(record["automaton_size"]))
+        elseif haskey(record, Symbol("automaton_size"))
+            push!(automaton_sizes, Int(record[Symbol("automaton_size")]))
+        end
+    end
+
+    isempty(automaton_sizes) && throw(ArgumentError("No `automaton_size` values are available for plotting."))
+
+    max_size = 100 #maximum(automaton_sizes)
+    bins = 0.5:1.0:(max_size + 0.5)
+
+    p = histogram(
+        automaton_sizes;
+        bins=bins,
+        normalize=false,
+        alpha=0.9,
+        label="LTL formulas",
+        xlabel="Automaton size",
+        ylabel="Number of LTL formulas",
+        title="",
+        legend=:topright,
+        xlims=(0.5, 100.5),
+        framestyle=:box,
+        grid=true,
+        size=(1100, 700),
+        left_margin=12Plots.mm,
+        right_margin=8Plots.mm,
+        bottom_margin=10Plots.mm,
+        top_margin=6Plots.mm,
+        guidefontsize=16,
+        tickfontsize=12,
+        legendfontsize=11,
+        linewidth=0.8,
+    )
+    hline!(p, [5]; linestyle=:dash, linewidth=2.0, label="Number of Büchi size = 5")
+    savefig(p, output_path)
+    println("Saved automaton-size distribution histogram to: ", output_path)
+    return p
+end
+
 
 function load_dataset(dataset_path::String = DEFAULT_DATASET_PATH)
     if !isfile(dataset_path)
@@ -15,6 +65,105 @@ function load_dataset(dataset_path::String = DEFAULT_DATASET_PATH)
     end
     data = JSON3.read(read(dataset_path, String))
     return collect(data)
+end
+
+function get_ltlfilt_path()
+    path = Sys.which("ltlfilt")
+    isnothing(path) && throw(ArgumentError(
+        "`ltlfilt` was not found in PATH. Please install Spot and make sure `ltlfilt` is available."
+    ))
+    return path
+end
+
+function formulas_from_field(records, field::String)
+    formulas = String[]
+    for record in records
+        if !(haskey(record, field) || haskey(record, Symbol(field)))
+            continue
+        end
+        value = haskey(record, field) ? record[field] : record[Symbol(field)]
+        formula_str = strip(String(value))
+        isempty(formula_str) && continue
+        push!(formulas, formula_str)
+    end
+    return formulas
+end
+
+function ltlfilt_equivalent(formula1::AbstractString, formula2::AbstractString)::Bool
+    ltlfilt_path = get_ltlfilt_path()
+    cmd = `$(ltlfilt_path) -f $(String(formula1)) --equivalent-to $(String(formula2)) -q`
+    process = run(ignorestatus(cmd))
+
+    if process.exitcode == 0
+        return true
+    elseif process.exitcode == 1
+        return false
+    else
+        throw(ArgumentError(
+            "`ltlfilt` failed while checking equivalence between $(repr(String(formula1))) and $(repr(String(formula2))) (exit code $(process.exitcode))."
+        ))
+    end
+end
+
+function semantic_equivalence_groups(formulas::Vector{String})
+    representatives = String[]
+    groups = Vector{Vector{String}}()
+
+    for formula in formulas
+        placed = false
+        for i in eachindex(representatives)
+            if ltlfilt_equivalent(formula, representatives[i])
+                push!(groups[i], formula)
+                placed = true
+                break
+            end
+        end
+
+        if !placed
+            push!(representatives, formula)
+            push!(groups, [formula])
+        end
+    end
+
+    return groups
+end
+
+function semantic_group_statistics(
+    dataset_path::String = DEFAULT_DATASET_PATH;
+    field::String = "LTL",
+    unique_first::Bool = true,
+    print_examples::Bool = true,
+)
+    records = load_dataset(dataset_path)
+    formulas = formulas_from_field(records, field)
+    unique_first && (formulas = unique(formulas))
+
+    println("Dataset path: ", dataset_path)
+    println("Field: ", field)
+    println("Total formulas considered: ", length(formulas))
+
+    groups = semantic_equivalence_groups(formulas)
+    group_sizes = sort([length(g) for g in groups]; rev=true)
+
+    println("Number of semantic-equivalence groups: ", length(groups))
+    println("Largest group size: ", isempty(group_sizes) ? 0 : first(group_sizes))
+
+    if print_examples
+        println()
+        println("Top 10 group sizes:")
+        for (idx, size_value) in enumerate(group_sizes[1:min(10, length(group_sizes))])
+            println("  Group ", idx, ": ", size_value)
+        end
+    end
+
+    return OrderedDict(
+        "dataset_path" => dataset_path,
+        "field" => field,
+        "total_formulas_considered" => length(formulas),
+        "num_semantic_equivalence_groups" => length(groups),
+        "group_sizes_descending" => group_sizes,
+        "groups" => groups,
+    )
 end
 
 function empty_operator_counter()
@@ -34,8 +183,13 @@ function empty_operator_counter()
     )
 end
 
+
 function empty_atomic_proposition_counter()
     return OrderedDict{String,Int}()
+end
+
+function empty_histogram()
+    return OrderedDict{Int,Int}()
 end
 
 function count_formula_operators(formula_str::AbstractString)
@@ -106,6 +260,97 @@ function formula_structure_statistics(formula_str::AbstractString)
         "ast_depth" => ast_depth(ast),
         "temporal_depth" => temporal_depth(ast),
     )
+end
+
+function plot_min_equiv_size_distribution(
+    records;
+    output_path::String = DEFAULT_MIN_EQUIV_SIZE_HISTOGRAM_PATH,
+)
+    size_by_id = Dict{Int,Int}()
+
+    for record in records
+        if !(haskey(record, "id") || haskey(record, Symbol("id")))
+            continue
+        end
+        record_id = Int(haskey(record, "id") ? record["id"] : record[Symbol("id")])
+
+        if !(haskey(record, "LTL") || haskey(record, Symbol("LTL")))
+            continue
+        end
+        formula_value = haskey(record, "LTL") ? record["LTL"] : record[Symbol("LTL")]
+        formula_str = strip(String(formula_value))
+        isempty(formula_str) && continue
+
+        try
+            structure_stats = formula_structure_statistics(formula_str)
+            size_by_id[record_id] = structure_stats["ast_size"]
+        catch err
+            println("Warning: failed to parse LTL for record ID $(record_id) while building minimum-equivalent-size histogram: ", err)
+        end
+    end
+
+    min_sizes = Int[]
+    seen_source_ids = Set{Int}()
+
+    for record in records
+        if !(haskey(record, "id") || haskey(record, Symbol("id")))
+            continue
+        end
+        record_id = Int(haskey(record, "id") ? record["id"] : record[Symbol("id")])
+        haskey(size_by_id, record_id) || continue
+
+        if haskey(record, "source_record_id") || haskey(record, Symbol("source_record_id"))
+            source_value = haskey(record, "source_record_id") ? record["source_record_id"] : record[Symbol("source_record_id")]
+            source_id = try
+                Int(source_value)
+            catch
+                nothing
+            end
+            isnothing(source_id) && continue
+            source_id in seen_source_ids && continue
+
+            current_size = size_by_id[record_id]
+            source_size = get(size_by_id, source_id, current_size)
+            push!(min_sizes, min(current_size, source_size))
+            push!(seen_source_ids, source_id)
+        else
+            push!(min_sizes, size_by_id[record_id])
+        end
+    end
+
+    isempty(min_sizes) && throw(ArgumentError("No minimum-equivalent LTL sizes are available for plotting."))
+
+    max_size = min(maximum(min_sizes), 35)
+    bins = 0.5:1.0:(max_size + 0.5)
+
+    p = histogram(
+        min_sizes;
+        bins=bins,
+        normalize=false,
+        alpha=0.9,
+        label="LTL formulas",
+        xlabel="Minimum AST size among equivalent LTLs in benchmark",
+        ylabel="Number of LTL formulas",
+        title="",
+        legend=:topright,
+        xlims=(0.5, 35.5),
+        framestyle=:box,
+        grid=true,
+        size=(1100, 700),
+        left_margin=12Plots.mm,
+        right_margin=8Plots.mm,
+        bottom_margin=10Plots.mm,
+        top_margin=6Plots.mm,
+        guidefontsize=16,
+        tickfontsize=12,
+        legendfontsize=11,
+        linewidth=0.8,
+    )
+
+    hline!(p, [5]; linestyle=:dash, linewidth=2.0, label="Number of LTL = 5")
+    savefig(p, output_path)
+    println("Saved minimum-equivalent-size distribution histogram to: ", output_path)
+    return p
 end
 
 function field_statistics(records, field::String)
@@ -278,7 +523,7 @@ function plot_size_distributions(
         alpha=0.9,
         label="LTL formulas",
         xlabel="LTL formula size",
-        ylabel="Count",
+        ylabel="Number of LTL formulas",
         title="",
         legend=:topright,
         framestyle=:box,
@@ -294,6 +539,7 @@ function plot_size_distributions(
         linewidth=0.8,
     )
 
+    hline!(p, [5]; linestyle=:dash, linewidth=2.0, label="Number of LTL = 5")
     savefig(p, output_path)
     println("Saved size distribution histogram to: ", output_path)
     return p
@@ -317,11 +563,23 @@ function dataset_statistics(
     end
 
     plot_size_distributions(all_stats)
+    try
+        plot_automaton_size_distribution(records)
+    catch err
+        println("Warning: could not plot automaton-size distribution: ", err)
+    end
+    try
+        plot_min_equiv_size_distribution(records)
+    catch err
+        println("Warning: could not plot minimum-equivalent-size distribution: ", err)
+    end
     return all_stats
 end
 
 function main()
     dataset_statistics()
+    println("Run `semantic_group_statistics(field=\"LTL\")` to count semantic-equivalence groups using Spot.")
+    println("Run `plot_min_equiv_size_distribution(load_dataset())` to plot the dataset distribution over minimum AST size, using the smaller size when a record has `source_record_id`.")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

@@ -8,7 +8,7 @@ include("LTLEquivalence.jl")
 # Configuration
 # =================================================================================================
 
-const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL.json")
+const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "NL2TL.json")
 const DEFAULT_INPUT_FIELDS = [
     "natural_paraphrase",

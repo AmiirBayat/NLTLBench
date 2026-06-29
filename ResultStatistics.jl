@@ -3,19 +3,40 @@
 using JSON3
 using OrderedCollections
 using Plots
+using Statistics
+using LinearAlgebra
+using SpecialFunctions: erfc
 
 const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 const DEFAULT_RESULTS_DIR = joinpath(@__DIR__, "results")
 
 const DEFAULT_OUTPUT_DIR = joinpath(@__DIR__, "results")
 
-const USE_PAPER_MODEL_SUBSET = true
+const USE_PAPER_MODEL_SUBSET = false
+
 const PAPER_MODEL_SUBSET = Set([
     "mistral-medium-latest",
     "claude-opus-4-7",
     "gpt-5.4",
     "gpt-5.5",
 ])
+
+const USE_ZERO_VS_FEWSHOT_SUBPLOTS = true
+const ZERO_VS_FEWSHOT_MODELS = [
+    "gpt-5.4",
+    "gpt-5.5",
+    "claude-opus-4-7",
+    "deepseek-v4-flash",
+    "mistral-medium-latest",
+]
+const ZERO_VS_FEWSHOT_FEWSHOT_FILES = Set([
+    "Claude_fewshot",
+    "GPT55_fewshot",
+    "GPT54_fewshot",
+    "DeepSeek_fewshot",
+    "Mistral_fewshot",
+])
+const MAX_PLOTTED_FORMULA_SIZE = 34
 
 # =================================================================================================
 # I/O helpers
@@ -145,6 +166,397 @@ function get_record_temporal_depth(record::OrderedDict{String,Any})
     end
 end
 
+function get_record_automaton_size(record::OrderedDict{String,Any})
+    if haskey(record, "automaton_size")
+        return Int(record["automaton_size"])
+    elseif haskey(record, "buchi_size")
+        return Int(record["buchi_size"])
+    elseif haskey(record, "minimized_buchi_size")
+        return Int(record["minimized_buchi_size"])
+    else
+        throw(ArgumentError("Dataset record ID $(get(record, "id", "?")) does not contain `automaton_size`, `buchi_size`, or `minimized_buchi_size`."))
+    end
+end
+
+function get_entry_input_field(entry::OrderedDict{String,Any})
+    for key in ("input_field", "field", "source_field")
+        if haskey(entry, key)
+            return String(entry[key])
+        end
+    end
+    return nothing
+end
+
+function nl_phrase_word_count(text::AbstractString)
+    s = strip(String(text))
+    isempty(s) && return 0
+    return length(split(s))
+end
+
+function get_entry_nl_phrase_length(entry::OrderedDict{String,Any}, dataset_index::Dict{Int,OrderedDict{String,Any}})
+    haskey(entry, "record_id") || throw(ArgumentError("Entry does not contain `record_id`."))
+    record_id = Int(entry["record_id"])
+    haskey(dataset_index, record_id) || throw(ArgumentError("Dataset index does not contain record ID $(record_id)."))
+
+    input_field = get_entry_input_field(entry)
+    isnothing(input_field) && throw(ArgumentError("Entry for record ID $(record_id) does not contain `input_field`."))
+    haskey(dataset_index[record_id], input_field) || throw(ArgumentError("Dataset record ID $(record_id) does not contain field `$(input_field)`."))
+
+    text_value = String(dataset_index[record_id][input_field])
+    return nl_phrase_word_count(text_value)
+end
+
+function build_source_record_min_formula_size_map(dataset_path::String = DEFAULT_DATASET_PATH)
+    dataset_index = load_dataset_index(dataset_path)
+    min_size_map = Dict{Int,Int}()
+
+    for (record_id, record) in dataset_index
+        haskey(record, "LTL") || continue
+        current_size = get_record_formula_size(record)
+
+        if haskey(record, "source_record_id")
+            source_id = try
+                Int(record["source_record_id"])
+            catch
+                nothing
+            end
+
+            if !isnothing(source_id) && haskey(dataset_index, source_id) && haskey(dataset_index[source_id], "LTL")
+                source_size = get_record_formula_size(dataset_index[source_id])
+                min_size_map[record_id] = min(current_size, source_size)
+            else
+                min_size_map[record_id] = current_size
+            end
+        else
+            min_size_map[record_id] = current_size
+        end
+    end
+
+    return min_size_map
+end
+
+function average_tied_ranks(values::Vector{Float64})
+    n = length(values)
+    n == 0 && return Float64[]
+
+    perm = sortperm(values)
+    ranks = zeros(Float64, n)
+    i = 1
+    while i <= n
+        j = i
+        while j < n && values[perm[j + 1]] == values[perm[i]]
+            j += 1
+        end
+        avg_rank = (i + j) / 2
+        for k in i:j
+            ranks[perm[k]] = avg_rank
+        end
+        i = j + 1
+    end
+
+    return ranks
+end
+
+function pearson_corr(x::Vector{Float64}, y::Vector{Float64})
+    n = length(x)
+    n == length(y) || throw(ArgumentError("Vectors must have the same length."))
+    n < 2 && return NaN
+
+    mx = mean(x)
+    my = mean(y)
+    x_centered = x .- mx
+    y_centered = y .- my
+    denom = sqrt(sum(abs2, x_centered) * sum(abs2, y_centered))
+    denom == 0 && return NaN
+    return sum(x_centered .* y_centered) / denom
+end
+
+function spearman_rank_correlation(x::Vector{Float64}, y::Vector{Float64})
+    length(x) == length(y) || throw(ArgumentError("Vectors must have the same length."))
+    length(x) < 2 && return NaN
+    rx = average_tied_ranks(x)
+    ry = average_tied_ranks(y)
+    return pearson_corr(rx, ry)
+end
+
+function normal_two_sided_pvalue_from_z(z::Float64)
+    return erfc(abs(z) / sqrt(2))
+end
+
+function approximate_spearman_pvalue(rho::Float64, n::Int)
+    if isnan(rho) || n < 4 || abs(rho) >= 1.0
+        return isnan(rho) ? NaN : 0.0
+    end
+    z = atanh(rho) * sqrt((n - 3) / 1.06)
+    return normal_two_sided_pvalue_from_z(z)
+end
+
+function success_indicator(entry::OrderedDict{String,Any})
+    status_ok = haskey(entry, "status") && String(entry["status"]) == "ok"
+    equivalent_true = haskey(entry, "equivalent") && entry["equivalent"] === true
+    return (status_ok && equivalent_true) ? 1.0 : 0.0
+end
+
+function measure_vectors_for_correlation(
+    entries::Vector{OrderedDict{String,Any}},
+    dataset_index::Dict{Int,OrderedDict{String,Any}};
+    dataset_path::String = DEFAULT_DATASET_PATH,
+)
+    min_size_map = build_source_record_min_formula_size_map(dataset_path)
+
+    measures = OrderedDict(
+        "NL length" => Float64[],
+        "AST size" => Float64[],
+        "Minimum AST size in equivalent class" => Float64[],
+        "Nesting" => Float64[],
+        "Minimized Buchi size" => Float64[],
+    )
+    success = Float64[]
+
+    for entry in entries
+        haskey(entry, "record_id") || continue
+        record_id = Int(entry["record_id"])
+        haskey(dataset_index, record_id) || continue
+        record = dataset_index[record_id]
+
+        try
+            nl_length = Float64(get_entry_nl_phrase_length(entry, dataset_index))
+            ast_size = Float64(get_record_formula_size(record))
+            min_ast_size = Float64(get(min_size_map, record_id, Int(round(ast_size))))
+            nesting = Float64(get_record_temporal_depth(record))
+            buchi_size = Float64(get_record_automaton_size(record))
+            succ = success_indicator(entry)
+
+            push!(measures["NL length"], nl_length)
+            push!(measures["AST size"], ast_size)
+            push!(measures["Minimum AST size in equivalent class"], min_ast_size)
+            push!(measures["Nesting"], nesting)
+            push!(measures["Minimized Buchi size"], buchi_size)
+            push!(success, succ)
+        catch err
+            println("Warning: skipping record ID $(record_id) in correlation computation: ", err)
+        end
+    end
+
+    return measures, success
+end
+
+function spearman_correlation_statistics(
+    entries::Vector{OrderedDict{String,Any}},
+    dataset_index::Dict{Int,OrderedDict{String,Any}};
+    dataset_path::String = DEFAULT_DATASET_PATH,
+)
+    measures, success = measure_vectors_for_correlation(entries, dataset_index; dataset_path=dataset_path)
+    stats = OrderedDict{String,OrderedDict{String,Any}}()
+
+    for (measure_name, values) in measures
+        rho = spearman_rank_correlation(values, success)
+        n = length(values)
+        p_value = approximate_spearman_pvalue(rho, n)
+        stats[measure_name] = OrderedDict(
+            "n" => n,
+            "spearman_rho" => rho,
+            "p_value" => p_value,
+        )
+    end
+
+    return stats
+end
+
+function print_spearman_correlation_statistics(
+    entries::Vector{OrderedDict{String,Any}},
+    dataset_index::Dict{Int,OrderedDict{String,Any}};
+    dataset_path::String = DEFAULT_DATASET_PATH,
+)
+    stats = spearman_correlation_statistics(entries, dataset_index; dataset_path=dataset_path)
+    println("Spearman rank correlation with success indicator")
+    println("------------------------------------------------------------")
+    for (measure_name, vals) in stats
+        println(measure_name, ":")
+        println("  n = ", vals["n"])
+        println("  rho = ", round(Float64(vals["spearman_rho"]); digits=4))
+        println("  p_value = ", round(Float64(vals["p_value"]); digits=6))
+    end
+    println()
+    return stats
+end
+
+
+# =================================================================================================
+# Logistic regression analysis
+# =================================================================================================
+
+function logistic_sigmoid(x::Float64)
+    if x >= 0
+        z = exp(-x)
+        return 1.0 / (1.0 + z)
+    else
+        z = exp(x)
+        return z / (1.0 + z)
+    end
+end
+
+function standardize_vector(x::Vector{Float64})
+    isempty(x) && return Float64[], NaN, NaN
+    μ = mean(x)
+    σ = std(x)
+    if isnan(σ) || σ == 0.0
+        return fill(0.0, length(x)), μ, σ
+    end
+    return (x .- μ) ./ σ, μ, σ
+end
+
+function logistic_regression_fit(X::Matrix{Float64}, y::Vector{Float64}; max_iter::Int = 100, tol::Float64 = 1e-8)
+    n, p = size(X)
+    length(y) == n || throw(ArgumentError("X and y must have compatible sizes."))
+
+    β = zeros(Float64, p)
+
+    for _ in 1:max_iter
+        η = X * β
+        μ = [clamp(logistic_sigmoid(v), 1e-9, 1 - 1e-9) for v in η]
+        w = μ .* (1 .- μ)
+        z = η + (y .- μ) ./ w
+
+        WX = X .* w
+        hessian = transpose(X) * WX
+        gradient_rhs = transpose(X) * (w .* z)
+
+        β_new = try
+            hessian \ gradient_rhs
+        catch
+            pinv(hessian) * gradient_rhs
+        end
+
+        if norm(β_new - β) < tol
+            β = β_new
+            break
+        end
+        β = β_new
+    end
+
+    η = X * β
+    μ = [clamp(logistic_sigmoid(v), 1e-9, 1 - 1e-9) for v in η]
+    w = μ .* (1 .- μ)
+    WX = X .* w
+    hessian = transpose(X) * WX
+    covβ = try
+        inv(hessian)
+    catch
+        pinv(hessian)
+    end
+    se = sqrt.(max.(diag(covβ), 0.0))
+
+    return β, se, μ
+end
+
+function logistic_regression_statistics(
+    entries::Vector{OrderedDict{String,Any}},
+    dataset_index::Dict{Int,OrderedDict{String,Any}};
+    dataset_path::String = DEFAULT_DATASET_PATH,
+)
+    measures, success = measure_vectors_for_correlation(entries, dataset_index; dataset_path=dataset_path)
+
+    ordered_names = [
+        "NL length",
+        "AST size",
+        "Minimum AST size in equivalent class",
+        "Nesting",
+        "Minimized Buchi size",
+    ]
+
+    standardized_columns = Vector{Vector{Float64}}()
+    means = Dict{String,Float64}()
+    stds = Dict{String,Float64}()
+
+    for name in ordered_names
+        x_std, μ, σ = standardize_vector(measures[name])
+        push!(standardized_columns, x_std)
+        means[name] = μ
+        stds[name] = σ
+    end
+
+    n = length(success)
+    p = 1 + length(ordered_names)
+    X = ones(Float64, n, p)
+    for (j, col) in enumerate(standardized_columns)
+        X[:, j + 1] = col
+    end
+    y = Float64.(success)
+
+    β, se, fitted = logistic_regression_fit(X, y)
+
+    stats = OrderedDict{String,OrderedDict{String,Any}}()
+    intercept_z = se[1] == 0.0 ? NaN : β[1] / se[1]
+    intercept_p = isnan(intercept_z) ? NaN : normal_two_sided_pvalue_from_z(intercept_z)
+    stats["Intercept"] = OrderedDict(
+        "coefficient" => β[1],
+        "std_error" => se[1],
+        "z_value" => intercept_z,
+        "p_value" => intercept_p,
+    )
+
+    for (j, name) in enumerate(ordered_names)
+        z_value = se[j + 1] == 0.0 ? NaN : β[j + 1] / se[j + 1]
+        p_value = isnan(z_value) ? NaN : normal_two_sided_pvalue_from_z(z_value)
+        odds_ratio = exp(β[j + 1])
+        stats[name] = OrderedDict(
+            "coefficient" => β[j + 1],
+            "std_error" => se[j + 1],
+            "z_value" => z_value,
+            "p_value" => p_value,
+            "odds_ratio" => odds_ratio,
+            "mean" => means[name],
+            "std" => stds[name],
+        )
+    end
+
+    loglik = sum(y .* log.(fitted) .+ (1 .- y) .* log.(1 .- fitted))
+    stats["Model"] = OrderedDict(
+        "n" => n,
+        "log_likelihood" => loglik,
+    )
+
+    return stats
+end
+
+function print_logistic_regression_statistics(
+    entries::Vector{OrderedDict{String,Any}},
+    dataset_index::Dict{Int,OrderedDict{String,Any}};
+    dataset_path::String = DEFAULT_DATASET_PATH,
+)
+    stats = logistic_regression_statistics(entries, dataset_index; dataset_path=dataset_path)
+    println("Logistic regression with success indicator")
+    println("------------------------------------------------------------")
+    println("Predictors are standardized before fitting.")
+    println("Model:")
+    println("  n = ", stats["Model"]["n"])
+    println("  log_likelihood = ", round(Float64(stats["Model"]["log_likelihood"]); digits=4))
+    println("Intercept:")
+    println("  coefficient = ", round(Float64(stats["Intercept"]["coefficient"]); digits=4))
+    println("  std_error = ", round(Float64(stats["Intercept"]["std_error"]); digits=4))
+    println("  z_value = ", round(Float64(stats["Intercept"]["z_value"]); digits=4))
+    println("  p_value = ", round(Float64(stats["Intercept"]["p_value"]); digits=6))
+
+    for measure_name in (
+        "NL length",
+        "AST size",
+        "Minimum AST size in equivalent class",
+        "Nesting",
+        "Minimized Buchi size",
+    )
+        vals = stats[measure_name]
+        println(measure_name, ":")
+        println("  coefficient = ", round(Float64(vals["coefficient"]); digits=4))
+        println("  std_error = ", round(Float64(vals["std_error"]); digits=4))
+        println("  z_value = ", round(Float64(vals["z_value"]); digits=4))
+        println("  p_value = ", round(Float64(vals["p_value"]); digits=6))
+        println("  odds_ratio = ", round(Float64(vals["odds_ratio"]); digits=4))
+    end
+    println()
+    return stats
+end
+
 # =================================================================================================
 # Result parsing
 # =================================================================================================
@@ -167,19 +579,63 @@ function result_model_name(results_obj::OrderedDict{String,Any}, results_path::S
         splitext(basename(results_path))[1]
     end
 
+    basename_name = splitext(basename(results_path))[1]
+    if basename_name == "GPT54_fewshot"
+        return "gpt-5.4"
+    elseif basename_name == "GPT55_fewshot"
+        return "gpt-5.5"
+    elseif basename_name == "Claude_fewshot"
+        return "claude-opus-4-7"
+    elseif basename_name == "DeepSeek_fewshot"
+        return "deepseek-v4-flash"
+    elseif basename_name == "Mistral_fewshot"
+        return "mistral-medium-latest"
+    end
+
     lowercase_model = lowercase(model_name)
     if occursin("deepseek", lowercase_model)
         return "deepseek-v4-flash"
+    elseif occursin("claude", lowercase_model)
+        return "claude-opus-4-7"
+    elseif occursin("mistral", lowercase_model)
+        return "mistral-medium-latest"
+    elseif lowercase_model == "gpt54" || lowercase_model == "gpt-5.4" || occursin("gpt54_fewshot", lowercase_model)
+        return "gpt-5.4"
+    elseif lowercase_model == "gpt55" || lowercase_model == "gpt-5.5" || occursin("gpt55_fewshot", lowercase_model)
+        return "gpt-5.5"
     end
 
     return model_name
 end
+
 
 function result_provider_name(results_obj::OrderedDict{String,Any})
     if haskey(results_obj, "translation_provider")
         return String(results_obj["translation_provider"])
     end
     return "unknown"
+end
+
+function result_prompt_setting(results_obj::OrderedDict{String,Any}, results_path::String)
+    if haskey(results_obj, "prompt_setting")
+        return lowercase(String(results_obj["prompt_setting"]))
+    end
+
+    basename_lower = lowercase(basename(results_path))
+    if occursin("fewshot", basename_lower) || occursin("few_shot", basename_lower)
+        return "fewshot"
+    end
+
+    return "zeroshot"
+end
+
+function use_zero_vs_fewshot_result_file(stats::OrderedDict{String,Any})
+    prompt_setting = haskey(stats, "prompt_setting") ? String(stats["prompt_setting"]) : "zeroshot"
+    if prompt_setting == "fewshot"
+        result_base = splitext(basename(String(stats["results_path"])))[1]
+        return result_base in ZERO_VS_FEWSHOT_FEWSHOT_FILES
+    end
+    return String(stats["model"]) in ZERO_VS_FEWSHOT_MODELS
 end
 
 function source_label_from_field(field::String)
@@ -393,6 +849,7 @@ function aggregate_result_file_statistics(results_path::String)
         "results_path" => results_path,
         "provider" => result_provider_name(results_obj),
         "model" => result_model_name(results_obj, results_path),
+        "prompt_setting" => result_prompt_setting(results_obj, results_path),
         "ignore_errors_in_success_rate" => ignore_errors,
         "entries" => entries,
         "overall" => overall_success_statistics(entries; ignore_errors=ignore_errors),
@@ -574,6 +1031,10 @@ function print_summary(results_path::String, entries::Vector{OrderedDict{String,
         println("    success_rate: ", round(rate; digits=4))
     end
     println()
+
+    dataset_index = load_dataset_index(DEFAULT_DATASET_PATH)
+    print_spearman_correlation_statistics(entries, dataset_index; dataset_path=DEFAULT_DATASET_PATH)
+    print_logistic_regression_statistics(entries, dataset_index; dataset_path=DEFAULT_DATASET_PATH)
 end
 
 function sanitize_basename(path::String)
@@ -685,6 +1146,7 @@ end
 
 
 
+
 function plot_all_models_success_rate_vs_formula_size(
     results_dir::String = DEFAULT_RESULTS_DIR;
     dataset_path::String = DEFAULT_DATASET_PATH,
@@ -692,82 +1154,132 @@ function plot_all_models_success_rate_vs_formula_size(
 )
     ensure_directory(output_dir)
     dataset_index = load_dataset_index(dataset_path)
-    aggregated_stats = maybe_filter_to_paper_models(aggregate_all_result_files(results_dir))
+    aggregated_stats_raw = aggregate_all_result_files(results_dir)
+    aggregated_stats = USE_ZERO_VS_FEWSHOT_SUBPLOTS ? aggregated_stats_raw : maybe_filter_to_paper_models(aggregated_stats_raw)
 
-    series_data = Vector{Tuple{String,Vector{Int},Vector{Float64},Vector{Int},Float64}}()
-    all_sizes = Int[]
+    if USE_ZERO_VS_FEWSHOT_SUBPLOTS
+        filtered_stats = OrderedDict{String,Any}[]
+        for stats in aggregated_stats
+            if use_zero_vs_fewshot_result_file(stats)
+                push!(filtered_stats, stats)
+            end
+        end
 
-    for stats in aggregated_stats
-        model_name = String(stats["model"])
-        entries = Vector{OrderedDict{String,Any}}(stats["entries"])
-        ignore_errors = haskey(stats, "ignore_errors_in_success_rate") ? Bool(stats["ignore_errors_in_success_rate"]) : false
-        sizes, rates, totals = size_bucket_success_rates(entries, dataset_index; ignore_errors=ignore_errors)
-        overall_rate = haskey(stats, "overall") && haskey(stats["overall"], "success_rate") ? Float64(stats["overall"]["success_rate"]) : 0.0
-        push!(series_data, (model_name, sizes, rates, totals, overall_rate))
-        append!(all_sizes, sizes)
-    end
+        isempty(filtered_stats) && throw(ArgumentError("Zero-vs-few-shot subplot mode is enabled, but no matching result files were found for the selected models."))
 
-    isempty(all_sizes) && throw(ArgumentError("No size statistics could be computed from the available result files."))
+        series_data = Vector{Tuple{String,String,Vector{Int},Vector{Float64},Vector{Int}}}()
+        all_sizes = Int[]
 
-    sorted_series = sort(series_data; by = item -> -item[5])
-    x_values = sort(unique(all_sizes))
-    xtick_step = maximum(x_values) <= 20 ? 1 : (maximum(x_values) <= 40 ? 2 : 5)
-    xtick_values = collect(minimum(x_values):xtick_step:maximum(x_values))
-    marker_shapes = [:circle, :rect, :diamond, :utriangle, :dtriangle, :star5, :hexagon, :xcross]
-    line_styles = [:solid, :dash, :dot, :dashdot, :dashdotdot]
+        for stats in filtered_stats
+            model_name = String(stats["model"])
+            prompt_setting = haskey(stats, "prompt_setting") ? String(stats["prompt_setting"]) : "zeroshot"
+            entries = Vector{OrderedDict{String,Any}}(stats["entries"])
+            ignore_errors = haskey(stats, "ignore_errors_in_success_rate") ? Bool(stats["ignore_errors_in_success_rate"]) : false
+            sizes, rates, totals = size_bucket_success_rates(entries, dataset_index; ignore_errors=ignore_errors)
+            keep_idx = [i for i in eachindex(sizes) if 1 <= sizes[i] <= MAX_PLOTTED_FORMULA_SIZE]
+            isempty(keep_idx) && continue
+            sizes = sizes[keep_idx]
+            rates = rates[keep_idx]
+            totals = totals[keep_idx]
+            push!(series_data, (model_name, prompt_setting, sizes, rates, totals))
+            append!(all_sizes, sizes)
+        end
 
-    if USE_PAPER_MODEL_SUBSET
-        p = plot(
-            xlabel="LTL formula size",
-            ylabel="Success rate",
-            title="",
-            legend=:outerright,
-            ylim=(0.0, 1.0),
-            xlims=(minimum(x_values) - 0.5, maximum(x_values) + 0.5),
-            xticks=xtick_values,
-            framestyle=:box,
-            grid=true,
-            minorgrid=false,
-            size=(1600, 850),
-            left_margin=16Plots.mm,
-            right_margin=26Plots.mm,
-            bottom_margin=12Plots.mm,
-            top_margin=6Plots.mm,
-            guidefontsize=18,
-            tickfontsize=13,
-            legendfontsize=11,
+        isempty(all_sizes) && throw(ArgumentError("No size statistics could be computed from the available zero-shot/few-shot result files."))
+
+        x_values = sort(unique(all_sizes))
+        xtick_step = maximum(x_values) <= 20 ? 1 : (maximum(x_values) <= 40 ? 2 : 5)
+        xtick_values = collect(minimum(x_values):xtick_step:maximum(x_values))
+        marker_shapes = Dict(
+            "gpt-5.4" => :circle,
+            "gpt-5.5" => :rect,
+            "claude-opus-4-7" => :diamond,
+            "deepseek-v4-flash" => :utriangle,
+            "mistral-medium-latest" => :dtriangle,
         )
 
-        for (idx, (model_name, sizes, rates, totals, overall_rate)) in enumerate(sorted_series)
-            marker_shape = marker_shapes[mod1(idx, length(marker_shapes))]
-            line_style = line_styles[mod1(idx, length(line_styles))]
-            plot!(
-                p,
-                sizes,
-                rates;
-                seriestype=:scatter,
-                marker=marker_shape,
-                markersize=6,
-                markerstrokewidth=0.5,
-                linewidth=2.6,
-                linestyle=line_style,
-                label=model_name,
+        subplot_list = Plots.Plot[]
+        for prompt_setting in ["zeroshot", "fewshot"]
+            prompt_series = [(model_name, sizes, rates, totals) for (model_name, ps, sizes, rates, totals) in series_data if ps == prompt_setting]
+
+            local_p = plot(
+                xlabel=(prompt_setting == "fewshot" ? "LTL formula size" : ""),
+                ylabel=(prompt_setting == "zeroshot" ? "Zero-shot success rate" : "Few-shot success rate"),
+                title="",
+                legend=(prompt_setting == "zeroshot" ? :topright : false),
+                ylim=(0.0, 1.0),
+                xlims=(minimum(x_values) - 0.5, maximum(x_values) + 0.5),
+                xticks=xtick_values,
+                framestyle=:box,
+                grid=true,
+                guidefontsize=25,
+                tickfontsize=15,
+                titlefontsize=18,
+                legendfontsize=14,
+                guidefontweight=:bold,
+                left_margin=14Plots.mm,
+                right_margin=10Plots.mm,
+                bottom_margin=10Plots.mm,
+                top_margin=6Plots.mm,
             )
-            plot!(
-                p,
-                sizes,
-                rates;
-                label="",
-                linewidth=2.6,
-                linestyle=line_style,
-            )
+
+            for model_name in ZERO_VS_FEWSHOT_MODELS
+                matching = [item for item in prompt_series if item[1] == model_name]
+                isempty(matching) && continue
+                _, sizes, rates, totals = matching[1]
+                marker_shape = get(marker_shapes, model_name, :circle)
+                plot!(
+                    local_p,
+                    sizes,
+                    rates;
+                    marker=marker_shape,
+                    markersize=5,
+                    markerstrokewidth=0.4,
+                    linewidth=2.3,
+                    label=(prompt_setting == "zeroshot" ? model_name : ""),
+                )
+            end
+
+            push!(subplot_list, local_p)
         end
+
+        p = plot(
+            subplot_list...;
+            layout=(2, 1),
+            size=(1700, 1250),
+        )
     else
+        series_data = Vector{Tuple{String,Vector{Int},Vector{Float64},Vector{Int},Float64}}()
+        all_sizes = Int[]
+
+        for stats in aggregated_stats
+            model_name = String(stats["model"])
+            entries = Vector{OrderedDict{String,Any}}(stats["entries"])
+            ignore_errors = haskey(stats, "ignore_errors_in_success_rate") ? Bool(stats["ignore_errors_in_success_rate"]) : false
+            sizes, rates, totals = size_bucket_success_rates(entries, dataset_index; ignore_errors=ignore_errors)
+            keep_idx = [i for i in eachindex(sizes) if 1 <= sizes[i] <= MAX_PLOTTED_FORMULA_SIZE]
+            isempty(keep_idx) && continue
+            sizes = sizes[keep_idx]
+            rates = rates[keep_idx]
+            totals = totals[keep_idx]
+            overall_rate = haskey(stats, "overall") && haskey(stats["overall"], "success_rate") ? Float64(stats["overall"]["success_rate"]) : 0.0
+            push!(series_data, (model_name, sizes, rates, totals, overall_rate))
+            append!(all_sizes, sizes)
+        end
+
+        isempty(all_sizes) && throw(ArgumentError("No size statistics could be computed from the available result files."))
+
+        sorted_series = sort(series_data; by = item -> -item[5])
+        x_values = sort(unique(all_sizes))
+        xtick_step = maximum(x_values) <= 20 ? 1 : (maximum(x_values) <= 40 ? 2 : 5)
+        xtick_values = collect(minimum(x_values):xtick_step:maximum(x_values))
+
         n_models = length(sorted_series)
         ncols = 2
         nrows = ceil(Int, n_models / ncols)
 
         plots_list = Plots.Plot[]
+        marker_shapes = [:circle, :rect, :diamond, :utriangle, :dtriangle, :star5, :hexagon, :xcross]
 
         for (idx, (model_name, sizes, rates, totals, overall_rate)) in enumerate(sorted_series)
             marker_shape = marker_shapes[mod1(idx, length(marker_shapes))]
@@ -916,7 +1428,10 @@ function main()
     println("Run `compare_all_models_and_plot_heatmap()` to compare overall success rates, plot the heatmap, and plot success rate vs both LTL size and temporal depth across models.")
     println("Run `study_result_file(joinpath(@__DIR__, \"results\", \"GPT54.json\"))` for one detailed file report.")
     println("Run `study_all_result_files()` to analyze all JSON files in the results folder one by one.")
+    println("Run `print_spearman_correlation_statistics(entries, load_dataset_index())` to print Spearman rho and approximate p-values for NL length, AST size, minimum equivalent-class AST size, nesting, and minimized Buchi size.")
+    println("Run `print_logistic_regression_statistics(entries, load_dataset_index())` to fit a logistic regression over the same five predictors and inspect which measures remain significant jointly across all models.")
     println("Set `USE_PAPER_MODEL_SUBSET = true` to plot only mistral-medium-latest, claude-opus-4-7, gpt-5.4, and gpt-5.5.")
+    println("Set `USE_ZERO_VS_FEWSHOT_SUBPLOTS = true` to plot zero-shot (top) and few-shot (bottom) success-rate-vs-size subplots for gpt-5.4, gpt-5.5, claude-opus-4-7, deepseek-v4-flash, and mistral-medium-latest.")
 end
 
 

@@ -268,9 +268,9 @@ function main()
     run_tag = timestamp_string()
 
     n_formulas = 50
-    max_depth = 14
-    min_ast_size = 40
-    max_ast_size = 60
+    max_depth = 10
+    min_ast_size = 15
+    max_ast_size = 25
 
     p_atom_at_max_depth = 1.0
     p_atom_before_max_depth = 0.02
@@ -279,20 +279,24 @@ function main()
     allow_boolean_constants = false
     boolean_constants = ["true", "false"]
     boolean_unary_ops = [:!]
-    boolean_binary_ops = [:&, :|, :->] # Symbol("<->")]
+    boolean_binary_ops = [:&, :|] #, :->] # Symbol("<->")]
 
-    max_attempts_per_formula = 4000
+    max_attempts_per_formula = 500
     enforce_unique_formulas = true
     uniqueness_mode = :normalized
+    generation_backend = :local
     redundancy_mode = :normalized
-    semantic_redundancy = true
+    semantic_redundancy = false
     semantic_backend = :spot
     semantic_existing_formulas = LTLFormula[]
     require_temporal_operator = true
     exact_satisfiability_check = true
-    exact_tautology_check = true
+    exact_tautology_check = false
     require_spot_backend = semantic_redundancy || exact_satisfiability_check || exact_tautology_check
     rng = MersenneTwister()
+    generation_n_formulas = generation_backend == :spot ? max(5 * n_formulas, 150) : n_formulas
+    generation_min_ast_size = generation_backend == :spot ? min_ast_size : nothing
+    generation_max_ast_size = generation_backend == :spot ? max_ast_size : max_ast_size
 
     # --------------------------------------------------------------------------
     # Backend checks
@@ -307,9 +311,10 @@ function main()
     formulas = generate_ltl_formulas(
         atomic_props = atomic_props,
         temporal_ops = temporal_ops,
-        n = n_formulas,
+        n = generation_n_formulas,
         max_depth = max_depth,
-        max_ast_size = max_ast_size,
+        max_ast_size = generation_max_ast_size,
+        min_ast_size = generation_min_ast_size,
         p_atom_at_max_depth = p_atom_at_max_depth,
         p_atom_before_max_depth = p_atom_before_max_depth,
         unary_weight = unary_weight,
@@ -321,6 +326,7 @@ function main()
         max_attempts_per_formula = max_attempts_per_formula,
         enforce_unique_formulas = enforce_unique_formulas,
         uniqueness_mode = uniqueness_mode,
+        backend = generation_backend,
         rng = rng,
     )
 
@@ -378,19 +384,25 @@ function main()
         accepted = [item[1] for item in accepted_statuses]
     end
 
-    # --------------------------------------------------------------------------
-    # Enforce minimum AST size on the final selected formula
+        # --------------------------------------------------------------------------
+    # Enforce final AST size window on the final selected formula
     # --------------------------------------------------------------------------
     before_count = length(accepted_statuses)
     accepted_statuses = [
         item for item in accepted_statuses
-        if ast_size(final_selected_formula_ast(item[1])) >= min_ast_size
+        if min_ast_size <= ast_size(final_selected_formula_ast(item[1])) <= max_ast_size
     ]
     removed = before_count - length(accepted_statuses)
     if removed > 0
-        println("Removed $(removed) formulas whose final selected AST size is smaller than $(min_ast_size) before saving.")
+        println("Removed $(removed) formulas whose final selected AST size falls outside [$(min_ast_size), $(max_ast_size)] before saving.")
     end
     accepted = [item[1] for item in accepted_statuses]
+
+    if length(accepted_statuses) > n_formulas
+        accepted_statuses = accepted_statuses[1:n_formulas]
+        accepted = [item[1] for item in accepted_statuses]
+        println("Trimmed accepted formulas to the requested count: $(n_formulas).")
+    end
 
     # --------------------------------------------------------------------------
     # Save results
@@ -409,7 +421,7 @@ function main()
     # --------------------------------------------------------------------------
     # Display results
     # --------------------------------------------------------------------------
-    println("Generated $(length(formulas)) candidate LTL formulas.\n")
+    println("Generated $(length(formulas)) candidate LTL formulas using backend $(generation_backend).\n")
     println()
     println("Accepted $(length(accepted)) formulas after filtering (satisfiable-only enforced).")
     println("Rejected $(length(rejected)) formulas after filtering.\n")

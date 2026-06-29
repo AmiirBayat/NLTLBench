@@ -8,6 +8,7 @@ using JSON3
 using OrderedCollections
 
 const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "ltl_dataset.json")
+const DEFAULT_CONFORMAL_PATH = joinpath(@__DIR__, "final_calib_normalized_fixed.json")
 
 # ----------------------------------------------------------------------------------------------
 # Dataset I/O
@@ -185,6 +186,65 @@ function add_manual_ltl_formulas(
 end
 
 # ----------------------------------------------------------------------------------------------
+# Import formulas from final_calib_normalized_fixed.json
+# ----------------------------------------------------------------------------------------------
+
+function load_json_array(path::String)
+    if !isfile(path)
+        throw(ArgumentError("File not found: $(path)"))
+    end
+    data = JSON3.read(read(path, String))
+    return [OrderedDict{String,Any}(String(k) => v for (k, v) in pairs(record)) for record in data]
+end
+
+function collect_ltlequ_normalized_formulas(records)
+    formulas = String[]
+    seen = Set{String}()
+
+    for record in records
+        haskey(record, "ltlequ_normalized") || continue
+        for item in record["ltlequ_normalized"]
+            formula = strip(String(item))
+            isempty(formula) && continue
+            if !(formula in seen)
+                push!(formulas, formula)
+                push!(seen, formula)
+            end
+        end
+    end
+
+    return formulas
+end
+
+"""
+    add_all_ltlequ_normalized_from_conformal_file(; input_path=DEFAULT_CONFORMAL_PATH,
+                                                    dataset_path=DEFAULT_DATASET_PATH,
+                                                    verbose=true)
+
+Load `ltlequ_normalized` formulas from `final_calib_normalized_fixed.json` and add them to
+`ltl_dataset.json` using `add_manual_ltl_formulas(...)`, so every formula still goes through
+parsing, satisfiability checks, simplification, temporal-policy checks, and duplicate detection.
+"""
+function add_all_ltlequ_normalized_from_conformal_file(
+    ;
+    input_path::String = DEFAULT_CONFORMAL_PATH,
+    dataset_path::String = DEFAULT_DATASET_PATH,
+    verbose::Bool = true,
+)
+    records = load_json_array(input_path)
+    formulas = collect_ltlequ_normalized_formulas(records)
+
+    verbose && begin
+        println("Loaded ", length(records), " records from: ", input_path)
+        println("Collected ", length(formulas), " unique formulas from `ltlequ_normalized`.")
+        println("Adding them through `add_manual_ltl_formulas(...)`...")
+        println()
+    end
+
+    return add_manual_ltl_formulas(formulas; dataset_path=dataset_path, verbose=verbose)
+end
+
+# ----------------------------------------------------------------------------------------------
 # Example usage
 # ----------------------------------------------------------------------------------------------
 
@@ -193,6 +253,7 @@ function main()
     println("Example usage:")
     println("  add_manual_ltl_formula(\"F(prop_1)\")")
     println("  add_manual_ltl_formulas([\"F(prop_1)\", \"G(F(prop_1))\"])")
+    println("  add_all_ltlequ_normalized_from_conformal_file()")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__

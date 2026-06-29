@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>End-to-End ABCD from Natural Language</title>
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+
+  <style>
+    body {
+      font-family: "Inter", "Helvetica Neue", Arial, sans-serif;
+      background: #ffffff;
+      color: #222;
+    }
+
+    .hero {
+      background: #f8f9fb;
+      padding-top: 3rem;
+      padding-bottom: 3rem;
+    }
+
+    .title {
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .author-block {
+      font-size: 1.1rem;
+      margin-top: 0.5rem;
+    }
+
+    .button {
+      margin: 0.25rem;
+    }
+
+    .section {
+      padding-top: 3rem;
+      padding-bottom: 3rem;
+    }
+
+    .content-wrapper {
+      max-width: 950px;
+      margin: auto;
+    }
+
+    .figure {
+      text-align: center;
+      margin-top: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .figure img {
+      max-width: 100%;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+    }
+
+    .caption {
+      font-size: 0.95rem;
+      color: #555;
+      margin-top: 0.5rem;
+    }
+
+    pre {
+      background: #f4f4f4;
+      padding: 1rem;
+      border-radius: 6px;
+      overflow-x: auto;
+    }
+
+    table {
+      margin: auto;
+    }
+
+    footer {
+      background: #f8f9fb;
+      padding: 2rem;
+      text-align: center;
+      color: #666;
+    }
+  </style>
+</head>
+
+<body>
+
+<section class="hero">
+  <div class="hero-body">
+    <div class="container has-text-centered">
+
+      <h1 class="title is-2">
+        End-to-End Abstraction-Based Control from Natural Language<br>
+        with LLM-Enhanced NL-to-LTL Translation
+      </h1>
+
+      <div class="author-block">
+        <a href="#">Amir Bayat</a><sup>1</sup>,
+        <a href="#">Raphaël M. Jungers</a><sup>1</sup>
+      </div>
+
+      <div class="is-size-6 mt-2">
+        <sup>1</sup>ICTEAM, UCLouvain, Louvain-la-Neuve, Belgium
+      </div>
+
+      <div class="mt-4">
+        <a class="button is-dark" href="paper.pdf">
+          <span class="icon"><i class="fas fa-file-pdf"></i></span>
+          <span>Paper</span>
+        </a>
+
+        <a class="button is-dark" href="#">
+          <span class="icon"><i class="ai ai-arxiv"></i></span>
+          <span>arXiv</span>
+        </a>
+
+        <a class="button is-dark" href="https://github.com/AmiirBayat/NLTLBench">
+          <span class="icon"><i class="fab fa-github"></i></span>
+          <span>Code</span>
+        </a>
+
+        <a class="button is-dark" href="https://github.com/AmiirBayat/NLTLBench">
+          <span class="icon"><i class="fas fa-database"></i></span>
+          <span>Benchmark</span>
+        </a>
+
+        <a class="button is-dark" href="#">
+          <span class="icon"><i class="fab fa-youtube"></i></span>
+          <span>Video</span>
+        </a>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Abstract</h2>
+    <p>
+      Abstraction-Based Controller Design (ABCD) offers a principled framework for
+      the safe control of complex Cyber-Physical Systems (CPSs), but interfacing
+      real-world requirements with its formal synthesis machinery remains a major
+      bottleneck. In practice, such requirements are most naturally expressed in
+      Natural Language (NL), whereas ABCD requires formal specifications such as
+      Linear Temporal Logic (LTL).
+    </p>
+
+    <p>
+      This paper presents an LLM-enhanced pipeline for ABCD, in which NL
+      requirements are translated into LTL and used within a formal synthesis
+      workflow. We implement the pipeline in <code>Dionysos.jl</code> and introduce
+      a benchmark for evaluating lifted NL-to-LTL translation under both logical
+      diversity and linguistic variation.
+    </p>
+
+    <p>
+      Experiments with state-of-the-art LLMs show that translation accuracy
+      degrades systematically with the complexity of the target specification,
+      measured by AST size and temporal depth. These results reveal a scaling
+      relationship between LLM success rate and LTL formula complexity.
+    </p>
+  </div>
+</section>
+
+<section class="section has-background-light">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Overview</h2>
+
+    <p>
+      The proposed framework translates NL requirements into LTL formulas,
+      validates the generated formal specification with the user, constructs the
+      corresponding Büchi automaton, and synthesizes an ABCD controller. The
+      abstract system is computed offline from the CPS model.
+    </p>
+
+    <div class="figure">
+      <img src="assets/framework.png" alt="Overview of the proposed framework">
+      <div class="caption">
+        Overview of the proposed NL-to-ABCD framework.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Benchmark Construction</h2>
+
+    <p>
+      We introduce a benchmark for evaluating NL-to-LTL translation beyond a
+      limited set of hand-written templates. LTL formulas are generated with
+      controlled AST size, back-translated into canonical English, and then
+      paraphrased using multiple LLMs to introduce linguistic diversity.
+    </p>
+
+    <div class="figure">
+      <img src="assets/benchmark_pipeline.png" alt="Benchmark construction pipeline">
+      <div class="caption">
+        Benchmark construction pipeline from LTL formulas to diverse NL-LTL pairs.
+      </div>
+    </div>
+
+    <table class="table is-bordered is-striped is-narrow">
+      <thead>
+        <tr>
+          <th>Statistic</th>
+          <th>Ours</th>
+          <th>VLTL</th>
+          <th>Conf.</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Total formula templates</td>
+          <td>1031</td>
+          <td>43</td>
+          <td>65</td>
+        </tr>
+        <tr>
+          <td>Unique formula templates</td>
+          <td>660</td>
+          <td>42</td>
+          <td>61</td>
+        </tr>
+        <tr>
+          <td>Max. formula size</td>
+          <td>80</td>
+          <td>33</td>
+          <td>17</td>
+        </tr>
+        <tr>
+          <td>Max. #APs</td>
+          <td>10</td>
+          <td>3</td>
+          <td>6</td>
+        </tr>
+        <tr>
+          <td>Max. temporal depth</td>
+          <td>7</td>
+          <td>6</td>
+          <td>4</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section has-background-light">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Results</h2>
+
+    <p>
+      We evaluate several state-of-the-art LLMs on the generated benchmark under
+      zero-shot and few-shot prompting. The results show that performance
+      decreases as the structural complexity of the target LTL formula increases.
+    </p>
+
+    <div class="figure">
+      <img src="assets/results.png" alt="LLM success rate as a function of formula complexity">
+      <div class="caption">
+        Success rate as a function of LTL formula size, Büchi automaton size,
+        and temporal depth.
+      </div>
+    </div>
+
+    <table class="table is-bordered is-striped is-narrow">
+      <thead>
+        <tr>
+          <th>Model</th>
+          <th>Zero-Shot</th>
+          <th>Few-Shot</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Claude Opus 4.7</td>
+          <td>73.23%</td>
+          <td>75.63%</td>
+        </tr>
+        <tr>
+          <td>GPT-5.5</td>
+          <td>64.79%</td>
+          <td>70.53%</td>
+        </tr>
+        <tr>
+          <td>GPT-5.4</td>
+          <td>66.73%</td>
+          <td>66.95%</td>
+        </tr>
+        <tr>
+          <td>DeepSeek-V4-Pro</td>
+          <td>52.79%</td>
+          <td>60.23%</td>
+        </tr>
+        <tr>
+          <td>Mistral Medium</td>
+          <td>56.55%</td>
+          <td>60.70%</td>
+        </tr>
+        <tr>
+          <td>T5-base fine-tuned</td>
+          <td>8.91%</td>
+          <td>–</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Interactive NL Interface for ABCD</h2>
+
+    <p>
+      We implement an interactive interface for synthesizing ABCD controllers
+      from NL requirements. The user enters an NL requirement, the system
+      generates the corresponding LTL formula, and the controller synthesis
+      pipeline is executed through Dionysos.jl.
+    </p>
+
+    <div class="figure">
+      <img src="assets/interface.png" alt="NL interface for ABCD">
+      <div class="caption">
+        Interactive NL interface for ABCD synthesis.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section has-background-light">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Video</h2>
+
+    <p>
+      A demonstration video will be added here.
+    </p>
+
+    <div class="figure">
+      <iframe width="800" height="450"
+        src="https://www.youtube.com/embed/VIDEO_ID"
+        title="Demo video"
+        frameborder="0"
+        allowfullscreen>
+      </iframe>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Citation</h2>
+
+<pre><code>@article{bayat2026endtoend,
+  title   = {End-to-End Abstraction-Based Control from Natural Language with LLM-Enhanced NL-to-LTL Translation},
+  author  = {Bayat, Amir and Jungers, Raphaël M.},
+  journal = {IEEE Control Systems Letters},
+  year    = {2026}
+}</code></pre>
+  </div>
+</section>
+
+<section class="section has-background-light">
+  <div class="content-wrapper">
+    <h2 class="title is-3">Acknowledgements</h2>
+
+    <p>
+      R.M. Jungers is an FNRS Honorary Research Associate. This project has
+      received funding from the European Research Council (ERC) under the
+      European Union's Horizon 2020 research and innovation programme, grant
+      agreement No. 864017 (L2C); from the Horizon Europe programme, grant
+      agreement No. 101177842 (UNIMAAS); from the Walloon Region through the
+      FLEXtest project; and from the ARC project SIDDARTA of the French Community
+      of Belgium. A. Bayat is supported by the French Community of Belgium
+      through an FNRS/FRIA grant.
+    </p>
+  </div>
+</section>
+
+<footer>
+  <p>
+    Website template inspired by academic project pages such as Lang2LTL and Nerfies.
+  </p>
+</footer>
+
+</body>
+</html>

@@ -4,7 +4,7 @@ using JSON3
 using OrderedCollections
 using Dates
 
-const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "Mistral.json")
+const DEFAULT_RESULTS_PATH = joinpath(@__DIR__, "results", "Claude_task_specific_rewritten.json")
 
 function load_results(results_path::String = DEFAULT_RESULTS_PATH)
     if !isfile(results_path)

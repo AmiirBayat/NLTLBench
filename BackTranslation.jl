@@ -4,7 +4,7 @@ include("Filter.jl")
 using JSON3
 using OrderedCollections
 
-const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "ltl_dataset.json")
+const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 const DEFAULT_OUTPUT_FIELD = "back_translation"
 
 function load_dataset(dataset_path::String = DEFAULT_DATASET_PATH)

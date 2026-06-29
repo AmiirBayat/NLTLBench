@@ -8,8 +8,8 @@ using DotEnv
 
 const DEFAULT_DATASET_PATH = joinpath(@__DIR__, "dataset", "DatasetWithNaturalNL_plus_simplified.json")
 const DEFAULT_OUTPUT_FIELD = "natural_paraphrase"
-const DEFAULT_MODEL = "claude-sonnet-4-5"
-const DEFAULT_API_URL = "https://api.anthropic.com/v1/messages"
+const DEFAULT_MODEL = "gpt-5.4-mini"
+const DEFAULT_API_URL = "https://api.openai.com/v1/responses"
 
 # ----------------------------------------------------------------------------------------------
 # Dataset I/O
@@ -31,16 +31,16 @@ function save_dataset(records, dataset_path::String = DEFAULT_DATASET_PATH)
 end
 
 # ----------------------------------------------------------------------------------------------
-# Anthropic API helpers
+# OpenAI API helpers
 # ----------------------------------------------------------------------------------------------
 
-function get_anthropic_api_key()
+function get_openai_api_key()
     # Load from a local .env file if present, then fall back to the process environment.
     isfile(joinpath(@__DIR__, ".env")) && DotEnv.load!(joinpath(@__DIR__, ".env"))
 
-    api_key = get(ENV, "ANTHROPIC_API_KEY", "")
+    api_key = get(ENV, "OPENAI_API_KEY", "")
     isempty(api_key) && throw(ArgumentError(
-        "ANTHROPIC_API_KEY is not set. Put it in a local .env file as ANTHROPIC_API_KEY=... or export it in your shell before running this script."
+        "OPENAI_API_KEY is not set. Put it in a local .env file as OPENAI_API_KEY=... or export it in your shell before running this script."
     ))
     return api_key
 end
@@ -128,27 +128,45 @@ function build_paraphrase_prompt(ltl::AbstractString, back_translation::Abstract
 end
 
 function extract_output_text(response_json)
-    content = if haskey(response_json, :content)
-        response_json[:content]
-    elseif haskey(response_json, "content")
-        response_json["content"]
+    if haskey(response_json, :output_text)
+        text = strip(String(response_json[:output_text]))
+        !isempty(text) && return text
+    elseif haskey(response_json, "output_text")
+        text = strip(String(response_json["output_text"]))
+        !isempty(text) && return text
+    end
+
+    output = if haskey(response_json, :output)
+        response_json[:output]
+    elseif haskey(response_json, "output")
+        response_json["output"]
     else
-        throw(ErrorException("Anthropic response did not contain `content`."))
+        throw(ErrorException("OpenAI response did not contain `output_text` or `output`."))
     end
 
     text_chunks = String[]
-    for part in content
-        part_type = haskey(part, :type) ? String(part[:type]) : String(part["type"])
-        if part_type == "text"
-            if haskey(part, :text)
-                push!(text_chunks, String(part[:text]))
-            elseif haskey(part, "text")
-                push!(text_chunks, String(part["text"]))
+    for item in output
+        if haskey(item, :content)
+            content = item[:content]
+        elseif haskey(item, "content")
+            content = item["content"]
+        else
+            continue
+        end
+
+        for part in content
+            part_type = haskey(part, :type) ? String(part[:type]) : String(part["type"])
+            if part_type == "output_text"
+                if haskey(part, :text)
+                    push!(text_chunks, String(part[:text]))
+                elseif haskey(part, "text")
+                    push!(text_chunks, String(part["text"]))
+                end
             end
         end
     end
 
-    isempty(text_chunks) && throw(ErrorException("Anthropic response contained no text content."))
+    isempty(text_chunks) && throw(ErrorException("OpenAI response contained no text content."))
     return strip(join(text_chunks, "\n"))
 end
 
@@ -158,29 +176,21 @@ function request_natural_paraphrase(
     model::String = DEFAULT_MODEL,
     api_url::String = DEFAULT_API_URL,
 )
-    api_key = get_anthropic_api_key()
+    api_key = get_openai_api_key()
     prompt = build_paraphrase_prompt(ltl, back_translation)
 
     body = Dict(
         "model" => model,
-        "max_tokens" => 512,
-        "temperature" => 0.3,
-        "messages" => [
-            Dict(
-                "role" => "user",
-                "content" => prompt,
-            )
-        ],
+        "input" => prompt,
     )
 
     headers = [
-        "x-api-key" => api_key,
-        "anthropic-version" => "2023-06-01",
+        "Authorization" => "Bearer $(api_key)",
         "content-type" => "application/json",
     ]
 
     response = HTTP.post(api_url, headers, JSON3.write(body))
-    response.status == 200 || throw(ErrorException("Anthropic API request failed with status $(response.status): $(String(response.body))"))
+    response.status == 200 || throw(ErrorException("OpenAI API request failed with status $(response.status): $(String(response.body))"))
 
     parsed = JSON3.read(String(response.body))
     return strip(extract_output_text(parsed))
@@ -286,7 +296,7 @@ function main()
     println("Loaded BackTranslationtToNaturalNL.jl")
     println("Run `preview_natural_paraphrases(min_id=525)` to inspect examples for records with id 525 and later.")
     println("Run `update_dataset_with_natural_paraphrases(overwrite=false, min_id=525)` to write them into DatasetWithNaturalNL_plus_simplified.json.")
-    println("Set ANTHROPIC_API_KEY in your shell or place it in a local .env file.")
+    println("Set OPENAI_API_KEY in your shell or place it in a local .env file.")
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
