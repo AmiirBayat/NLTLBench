@@ -67,3 +67,140 @@ This pipeline ensures that the resulting dataset:
 - avoids **syntactic and semantic redundancy**
 - provides **aligned NL–LTL pairs**
 - supports **controlled complexity and analysis**
+# NL2LTLBench
+
+This repository contains the code used to generate and evaluate **NLTLBench**, a benchmark of paired **natural-language (NL) descriptions** and **Linear Temporal Logic (LTL) formulas**.
+
+The benchmark is available in:
+
+```text
+benchmark/DatasetWithNaturalNL_plus_simplified.json
+```
+
+This file contains the generated LTL formulas, their verbatim back-translations, LLM-generated paraphrases, and structural metadata used in the experiments.
+
+---
+
+## Repository Structure
+
+The main files are:
+
+- `main.jl`  
+  Generates candidate LTL formulas and applies the filtering pipeline.
+
+- `BackTranslation.jl`  
+  Translates LTL formulas into verbatim natural-language descriptions using rule-based back-translation.
+
+- `Paraphrase_LLMName.jl`  
+  Paraphrases the verbatim descriptions using the corresponding LLM. These files are used to generate linguistically diverse NL realizations of the same LTL specification.
+
+- `LLM_performnce.jl`  
+  Evaluates the performance of LLMs on the benchmark by translating NL descriptions back into LTL formulas and checking semantic equivalence with the ground-truth formulas.
+
+- `ResultplusNesting.jl`  
+  Analyzes and plots the experimental results, including performance trends with respect to formula complexity and nesting/temporal-depth measures.
+
+---
+
+## Benchmark Generation Pipeline
+
+The benchmark construction follows the steps below.
+
+### 1. LTL Formula Generation
+
+`main.jl` is used to generate candidate LTL formulas from a set of atomic propositions and temporal/Boolean operators.
+
+The atomic propositions are of the form:
+
+```text
+prop_1, prop_2, ..., prop_n
+```
+
+The operators include:
+
+```text
+F, G, X, U, |, &, ->, <->, !
+```
+
+The generation process controls structural properties such as AST size and temporal nesting depth.
+
+### 2. Filtering and Validation
+
+Generated formulas are filtered to keep formulas that are valid for the benchmark. The filtering includes:
+
+- syntactic correctness,
+- satisfiability,
+- non-triviality,
+- syntactic duplicate removal,
+- semantic duplicate checking.
+
+Spot is used for LTL manipulation and equivalence checking.
+
+### 3. Back-Translation
+
+`BackTranslation.jl` converts each retained LTL formula into a verbatim NL description. This translation follows the structure of the LTL formula using fixed grammatical templates.
+
+### 4. Paraphrasing
+
+Files of the form:
+
+```text
+Paraphrase_LLMName.jl
+```
+
+are used to paraphrase the verbatim NL descriptions with different LLMs. This introduces linguistic diversity while preserving the underlying temporal semantics.
+
+### 5. Benchmark Dataset
+
+The final benchmark is stored in:
+
+```text
+benchmark/DatasetWithNaturalNL_plus_simplified.json
+```
+
+Each record contains the LTL formula, verbatim back-translation, paraphrases, and metadata such as formula size, temporal depth, number of propositions, and automaton statistics.
+
+---
+
+## Evaluating LLMs
+
+`LLM_performnce.jl` is used to evaluate LLM translation performance on the benchmark.
+
+To run this file, create a local `.env` file and add your own API key for the corresponding LLM provider. For example:
+
+```text
+OPENAI_API_KEY=your_api_key_here
+ANTHROPIC_API_KEY=your_api_key_here
+MISTRAL_API_KEY=your_api_key_here
+DEEPSEEK_API_KEY=your_api_key_here
+GEMINI_API_KEY=your_api_key_here
+```
+
+Do **not** commit the `.env` file to GitHub.
+
+The evaluation script translates each NL input into an LTL formula and checks whether the predicted formula is semantically equivalent to the ground-truth LTL formula.
+
+---
+
+## Result Analysis
+
+`ResultplusNesting.jl` is used to study and plot the results. In particular, it can be used to analyze how LLM performance changes with respect to:
+
+- formula size,
+- temporal depth,
+- nesting depth,
+- Büchi automaton size,
+- NL input length.
+
+---
+
+## Summary
+
+This repository supports the full NLTLBench workflow:
+
+1. generate LTL formulas,
+2. filter and validate formulas,
+3. back-translate formulas into verbatim NL,
+4. paraphrase NL descriptions using LLMs,
+5. evaluate LLMs on NL-to-LTL translation,
+6. analyze and plot the resulting performance trends.
